@@ -1,0 +1,16 @@
+name: md-policy
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+
+jobs:
+  md-policy:
+    name: md-policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verificar política de arquivos .md
+        run: bash .githooks/check-md-policy.sh --all
