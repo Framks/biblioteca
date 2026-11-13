@@ -90,13 +90,13 @@ Os valores entre parênteses são o **padrão**, todos parametrizáveis na tabel
 ### Devolução e atraso
 
 - **RN06:** um item está **atrasado** quando não foi devolvido e a data prevista já passou. O atraso é **calculado na consulta**, não gravado no banco.
-- **RN07:** ao devolver com atraso, o leitor fica **suspenso** por (**1**) dia para cada dia de atraso. Não há multa em dinheiro.
+- **RN07:** ao devolver com atraso, o leitor fica **suspenso** por (**1**) dia para cada dia de atraso, contando o dia da devolução como o primeiro. Se vários itens forem devolvidos juntos, vale o **maior** atraso entre eles (não a soma). Uma suspensão nunca encurta outra que já esteja em andamento. Não há multa em dinheiro.
 - **RN08:** na devolução é registrada a condição do exemplar. Se a condição for `danificado`, o exemplar vai para `manutencao`; caso contrário, volta para `disponivel`.
 - **RN09:** cada item de um empréstimo pode ser devolvido separadamente; o empréstimo é `encerrado` quando todos os itens forem devolvidos.
 
 ### Renovação
 
-- **RN10:** cada item pode ser renovado no máximo (**2**) vezes, acrescentando o prazo padrão a partir da data da renovação.
+- **RN10:** cada item pode ser renovado no máximo (**2**) vezes. A nova data é a data da renovação + o prazo padrão, mas **nunca antes da data prevista atual** (renovar cedo não encurta o prazo).
 - **RN11:** não é possível renovar um item já atrasado.
 
 ### Cadastros
@@ -110,29 +110,33 @@ Os valores entre parênteses são o **padrão**, todos parametrizáveis na tabel
 ## 5. Requisitos não funcionais (RNF)
 
 - **RNF01 – Linguagem do backend:** Kotlin.
-- **RNF02 – API:** REST, JSON, versionada em `/api/v1`, documentada com OpenAPI/Swagger e coleções do Postman.
-- **RNF03 – Senhas:** armazenadas como **hash** (bcrypt ou argon2), nunca em texto puro nem criptografadas de forma reversível.
+- **RNF02 – API:** REST, JSON, versionada em `/api/v1`, documentada pela coleção do Postman em `docs/postman/` (contrato com o frontend).
+- **RNF03 – Senhas:** armazenadas como **hash BCrypt**, nunca em texto puro nem criptografadas de forma reversível.
 - **RNF04 – Paginação:** listagens paginadas (`page`, `size`) com ordenação (`sort`).
 - **RNF05 – Padrão de erros:** respostas de erro em formato único (ver seção 10.2).
 - **RNF06 – Validação:** entradas validadas no backend, com mensagens claras por campo.
-- **RNF07 – Testes:** testes unitários das regras de negócio e testes de integração da API; meta de cobertura mínima de (**70%**) na camada de serviço.
+- **RNF07 – Testes:** testes de componente: a aplicação sobe inteira e cada regra é testada pela API (entrada HTTP → saída HTTP), incluindo segurança e permissões. Não há testes unitários isolados. O CI roda a suíte em H2 e em PostgreSQL a cada PR.
 - **RNF08 – Execução local:** o projeto inteiro sobe com um único comando (`./run.sh`).
-- **RNF09 – Datas:** armazenadas em UTC; exibidas no fuso `America/Fortaleza`.
+- **RNF09 – Datas:** instantes armazenados em UTC; o "hoje" das regras de prazo, atraso e suspensão é o do fuso `America/Fortaleza`.
+- **RNF10 – Banco de dados:** H2 em desenvolvimento e testes; PostgreSQL em produção. O schema é criado só por migrations (Flyway) escritas em SQL compatível com os dois.
+- **RNF11 – Concorrência:** dois atendimentos simultâneos do mesmo exemplar não geram dois empréstimos (controle otimista por versão; o segundo recebe 409).
 
 ## 6. Segurança: autenticação e sessão
 
 ### 6.1 Senhas e login
 
-- Hash com **bcrypt/argon2** e salt.
-- Após (**5**) tentativas de login erradas seguidas, a conta fica bloqueada por (**15**) minutos.
+- Hash com **BCrypt** (inclui salt).
+- Após (**5**) tentativas de login erradas seguidas, a conta fica bloqueada por (**15**) minutos (resposta `423 ACCOUNT_LOCKED`).
 - Mensagem de erro genérica ("e-mail ou senha inválidos"), sem revelar se o e-mail existe.
+- O administrador inicial (`admin@biblioteca.local`) recebe a senha da variável `ADMIN_SENHA_INICIAL` na primeira execução; depois, ela é trocada em `PUT /auth/password`.
 
 ### 6.2 Tokens
 
 | Token | Duração | Onde fica | Conteúdo |
 |---|---|---|---|
 | Access token (JWT) | (**15 min**) | memória do frontend, enviado no header `Authorization: Bearer` | `sub` (usuário), `sid` (sessão), `jti` (id do token), `perfil`, `exp` |
-| Refresh token | (**7 dias**) | cookie `HttpOnly`, `Secure`, `SameSite=Strict` | valor aleatório opaco; no banco fica só o hash |
+| Refresh token | (**7 dias**) | cookie `HttpOnly`, `Secure` (em produção), `SameSite=Strict`, path `/api/v1/auth` | valor aleatório opaco; no banco fica só o hash |
+| `device_id` | 1 ano | cookie `HttpOnly`, `SameSite=Strict`, path `/api` | identifica o navegador (ver 6.5); no banco fica só o hash |
 
 ### 6.3 Renovação (rotação de refresh token)
 
@@ -144,6 +148,15 @@ Os valores entre parênteses são o **padrão**, todos parametrizáveis na tabel
 
 - A blocklist guarda o `jti` de access tokens **revogados que ainda não expiraram** (logout, troca de senha, sessão suspeita). Tokens expirados já são recusados pela validação normal, então não precisam entrar na blocklist.
 - Cada registro tem `expira_em` igual ao `exp` do token; uma rotina remove periodicamente os registros vencidos.
+
+### 6.5 Uso do token em outro lugar
+
+Requisito original: se o token de quem está em Quixadá aparecer sendo usado em outro lugar (ex.: na Rússia), o acesso deve ser barrado.
+
+- No login, a sessão é **presa ao navegador**: o cookie `device_id` (HttpOnly, invisível ao JavaScript) e o User-Agent.
+- Em toda requisição, o token só é aceito junto com o mesmo `device_id` e o mesmo User-Agent do login. Um JWT copiado para outra máquina chega sem esse cookie: a **sessão é encerrada na hora** (para o atacante e para o dono, que faz login de novo) e o evento vai para a auditoria.
+- Mudança só de IP (ex.: Wi-Fi para 4G) é permitida e registrada na auditoria (`IP_ALTERADO`).
+- Não há geolocalização por IP nem cálculo de "viagem impossível": a vinculação ao dispositivo já barra o cenário acima de forma mais simples.
 
 ## 7. Perfis e permissões
 
@@ -220,7 +233,7 @@ erDiagram
         String nome
         String email UK
         String senha_hash "nulo = leitor sem acesso ao sistema"
-        String documento UK
+        String documento UK "unico junto com tipo_documento"
         String tipo_documento "CPF, RG"
         String endereco
         String telefone
@@ -262,6 +275,7 @@ erDiagram
         Int livro_id FK
         String condicao "novo, excelente, conservado, aceitavel, mal_conservado, danificado"
         String status "disponivel, emprestado, manutencao, baixado"
+        Int versao "controle de concorrencia (RNF11)"
         TIMESTAMP data_cadastro
         TIMESTAMP data_atualizacao
     }
@@ -293,7 +307,6 @@ erDiagram
         String device_id_hash
         String ip
         String user_agent
-        String localizacao "cidade/pais via GeoIP"
         TIMESTAMP criado_em
         TIMESTAMP ultimo_acesso
         TIMESTAMP expira_em
@@ -328,9 +341,9 @@ erDiagram
         String acao
         String entidade
         Int entidade_id
-        String detalhes "JSON"
+        String detalhes
         String ip
-        TIMESTAMP data
+        TIMESTAMP data_hora
     }
 ```
 
@@ -355,18 +368,20 @@ erDiagram
 | `login.bloqueio_minutos` | 15 |
 | `jwt.access_minutos` | 15 |
 | `jwt.refresh_dias` | 7 |
-| `sessao.viagem_impossivel_km_h` | 500 |
+
+Todas podem ser alteradas em `PUT /settings/{chave}` (permissão `config_manage`) e valem na hora.
 
 ## 9. Organização do repositório
 
 ```
 biblioteca/
-├── .github/workflows/      # CI (política de .md, build/testes)
+├── .github/workflows/      # CI: md-policy e backend (testes em H2 e PostgreSQL)
 ├── .githooks/              # hooks locais (pre-commit)
 ├── backend_biblioteca/     # API em Kotlin
 ├── frontend_biblioteca/    # interface web
 ├── docs/
-│   ├── objetivo.md         # este documento
+│   ├── objetivo.md         # este documento (requisitos e decisões)
+│   ├── backend.md          # arquitetura, convenções e como rodar o backend
 │   ├── pull_request_template.md
 │   └── postman/            # coleções e ambientes do Postman
 ├── README.md
@@ -375,9 +390,9 @@ biblioteca/
 
 Repositório: `git@github.com:Framks/biblioteca.git` (monorepo com backend e frontend). Regras de colaboração no `README.md`.
 
-## 10. Contrato da API (rascunho para o frontend)
+## 10. Contrato da API
 
-Base: `/api/v1`. Os detalhes de cada endpoint (corpo, respostas, exemplos) serão definidos nas coleções do Postman.
+Base: `/api/v1`. Corpo, respostas, exemplos e códigos de erro de cada endpoint estão na coleção do Postman (`docs/postman/biblioteca.postman_collection.json`).
 
 ### 10.1 Endpoints
 
@@ -387,19 +402,22 @@ Base: `/api/v1`. Os detalhes de cada endpoint (corpo, respostas, exemplos) serã
 | POST | `/auth/refresh` | cookie refresh | rotaciona tokens |
 | POST | `/auth/logout` | autenticado | revoga sessão atual |
 | GET | `/auth/me` | autenticado | dados e permissões do usuário logado |
+| PUT | `/auth/password` | autenticado | troca a própria senha (encerra as outras sessões) |
 | GET | `/auth/sessions` | `session_manage_own` | sessões ativas do usuário |
-| DELETE | `/auth/sessions/{id}` | `session_manage_own` | encerra uma sessão |
+| DELETE | `/auth/sessions/{id}` | `session_manage_own` / `session_manage` | encerra uma sessão própria / de qualquer usuário |
 | GET | `/catalog/books` | pública | catálogo público com disponibilidade |
 | GET | `/books` | `book_read` | lista/pesquisa livros (filtros RF04) |
-| GET | `/books/{id}` | `book_read` | detalhe do livro com exemplares |
+| GET | `/books/{id}` | `book_read` | detalhe do livro, com as quantidades de exemplares |
 | POST | `/books` | `book_create` | cadastra livro |
 | PUT | `/books/{id}` | `book_update` | edita livro |
 | DELETE | `/books/{id}` | `book_delete` | inativa livro |
-| GET | `/genres` | `book_read` | lista gêneros |
+| GET | `/genres` | pública | lista gêneros (usado também pelo catálogo) |
 | POST | `/genres` | `genre_manage` | cadastra gênero |
+| PUT | `/genres/{id}` | `genre_manage` | renomeia gênero |
 | GET | `/books/{id}/copies` | `copy_read` | exemplares do livro |
 | POST | `/books/{id}/copies` | `copy_manage` | adiciona exemplar(es) |
-| PATCH | `/copies/{id}` | `copy_manage` | altera condição/status (manutenção, baixa) |
+| GET | `/copies/{id}` | `copy_read` | detalhe do exemplar |
+| PATCH | `/copies/{id}` | `copy_manage` | altera código, condição ou status (manutenção, baixa) |
 | GET | `/readers` | `reader_read` | lista/pesquisa leitores |
 | GET | `/readers/{id}` | `reader_read` | detalhe do leitor |
 | POST | `/readers` | `reader_create` | cadastra leitor |
@@ -417,10 +435,16 @@ Base: `/api/v1`. Os detalhes de cada endpoint (corpo, respostas, exemplos) serã
 | GET | `/reports/loans-per-month` | `report_read` | empréstimos por mês |
 | GET | `/reports/top-books` | `report_read` | livros mais emprestados |
 | GET | `/reports/overdue-readers` | `report_read` | leitores em atraso |
-| GET | `/reports/{tipo}/export` | `report_read` | exportação CSV |
-| GET/POST/PUT | `/users` | `user_manage` | funcionários e administradores |
-| GET/PUT | `/roles` | `role_manage` | perfis e permissões |
-| GET/PUT | `/settings` | `config_manage` | configurações de negócio |
+| GET | `/reports/{relatório}/export` | `report_read` | exportação CSV de qualquer um dos quatro relatórios acima |
+| GET/POST | `/users` | `user_manage` | lista / cadastra funcionários e administradores |
+| GET/PUT/DELETE | `/users/{id}` | `user_manage` | detalhe / edita / inativa |
+| PUT | `/users/{id}/password` | `user_manage` | redefine a senha (encerra as sessões do usuário) |
+| GET | `/users/{id}/sessions` | `session_manage` | sessões ativas de um usuário |
+| GET | `/roles` | `role_manage` | perfis com suas permissões |
+| GET | `/permissions` | `role_manage` | as 24 permissões |
+| PUT | `/roles/{id}/permissions` | `role_manage` | define as permissões de um perfil (ADMIN e VISITANTE não são editáveis) |
+| GET | `/settings` | autenticado | configurações de negócio |
+| PUT | `/settings/{chave}` | `config_manage` | altera uma configuração |
 | GET | `/audit` | `audit_read` | auditoria |
 
 ### 10.2 Formato de erro
@@ -438,7 +462,7 @@ Base: `/api/v1`. Os detalhes de cada endpoint (corpo, respostas, exemplos) serã
 }
 ```
 
-Códigos HTTP: `400` entrada inválida, `401` não autenticado/token inválido, `403` sem permissão, `404` não encontrado, `409` conflito (ex.: duplicidade), `422` regra de negócio violada.
+Códigos HTTP: `400` entrada inválida, `401` não autenticado/token inválido, `403` sem permissão, `404` não encontrado, `409` conflito (ex.: duplicidade, `CONCURRENT_UPDATE`), `422` regra de negócio violada, `423` login bloqueado. O `code` é estável e pode ser usado pelo frontend; a `message` é para o usuário.
 
 ### 10.3 Formato de listagem paginada
 
@@ -457,17 +481,19 @@ Códigos HTTP: `400` entrada inválida, `401` não autenticado/token inválido, 
 - **Backend**
   - [x] Melhorar requisitos do `objetivo.md`
   - [x] Definir linguagem: **Kotlin**
-  - [ ] Definir framework
-  - [ ] Definir arquitetura
-  - [ ] Definir padrões de projeto
-  - [ ] Definir banco de dados
-  - [ ] Definir estrutura dos testes
-  - [ ] Criar coleções do Postman (contrato para o frontend)
+  - [x] Definir framework: **Spring Boot 4**
+  - [x] Definir arquitetura: camadas com facade (ver `docs/backend.md`)
+  - [x] Definir padrões de projeto
+  - [x] Definir banco de dados: H2 (dev/testes) e PostgreSQL (produção)
+  - [x] Definir estrutura dos testes: testes de componente pela API
+  - [x] Criar coleção do Postman (contrato para o frontend)
+  - [x] Implementar todos os RF, RN e a seção 6
 - **Frontend**
   - [ ] Definir tecnologia
-  - [ ] Implementar telas a partir das coleções do Postman
+  - [ ] Implementar telas a partir da coleção do Postman
 - **Integração**
-  - [ ] Criar `run.sh` para rodar todo o projeto na máquina local
+  - [x] Criar `run.sh` para rodar todo o projeto na máquina local
+  - [x] CI: testes do backend em H2 e PostgreSQL obrigatórios para o merge
 
 ## 12. Decisões já tomadas
 
@@ -478,3 +504,9 @@ Códigos HTTP: `400` entrada inválida, `401` não autenticado/token inválido, 
 - Limites, prazos e renovações são **parametrizáveis** (seção 8.2).
 - Há uma **área pública** de consulta ao acervo para visitantes.
 - **Divisão do time:** backend em Kotlin; frontend com outro membro do time.
+- **Backend:** Kotlin + Spring Boot 4, JPA/Hibernate, Flyway, Spring Security com JWT (Nimbus). Arquitetura em camadas Controller → Facade → Service → Repository (detalhes e convenções em `docs/backend.md`).
+- **Documentação da API:** coleção do Postman em `docs/postman/` (sem OpenAPI).
+- **Testes:** só testes de componente, pela API; rodam em H2 e em PostgreSQL no CI.
+- **Leitor e funcionário na mesma tabela** (`usuario`), diferenciados pelo perfil. Leitor sem senha não faz login.
+- **Visitante não tem conta:** é o acesso anônimo às rotas públicas (`/catalog/**`, `GET /genres`).
+- **Seção 6.5 simplificada:** vinculação da sessão ao dispositivo/navegador, sem geolocalização.

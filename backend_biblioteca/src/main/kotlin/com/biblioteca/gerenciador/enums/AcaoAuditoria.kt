@@ -1,0 +1,41 @@
+package com.biblioteca.gerenciador.enums
+
+/** Ações registradas na auditoria (RF21). */
+enum class AcaoAuditoria {
+    // autenticação e sessões
+    LOGIN_SUCESSO,
+    LOGIN_FALHA,
+    LOGIN_CONTA_BLOQUEADA,
+    CONTA_BLOQUEADA,
+    LOGOUT,
+    SESSAO_REVOGADA,
+    REFRESH_TOKEN_REUSADO,
+    IP_ALTERADO,
+    SENHA_ALTERADA,
+
+    // acervo
+    GENERO_CRIADO,
+    GENERO_ATUALIZADO,
+    LIVRO_CRIADO,
+    LIVRO_ATUALIZADO,
+    LIVRO_INATIVADO,
+    EXEMPLARES_CRIADOS,
+    EXEMPLAR_ATUALIZADO,
+
+    // leitores e usuários
+    LEITOR_CRIADO,
+    LEITOR_ATUALIZADO,
+    LEITOR_INATIVADO,
+    LEITOR_ACESSO_HABILITADO,
+    USUARIO_CRIADO,
+    USUARIO_ATUALIZADO,
+    USUARIO_INATIVADO,
+    USUARIO_SENHA_REDEFINIDA,
+    PERFIL_PERMISSOES_ALTERADAS,
+
+    // circulação e configurações
+    EMPRESTIMO_REGISTRADO,
+    DEVOLUCAO_REGISTRADA,
+    RENOVACAO_REGISTRADA,
+    CONFIGURACAO_ALTERADA,
+}

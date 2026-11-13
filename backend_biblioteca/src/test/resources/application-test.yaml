@@ -1,0 +1,11 @@
+# Testes de componente: H2 em memória, recriado a cada execução.
+spring:
+  datasource:
+    url: jdbc:h2:mem:biblioteca_test;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+
+app:
+  seguranca:
+    jwt-segredo: segredo-dos-testes-com-pelo-menos-32-caracteres
+    admin-senha-inicial: admin-teste-123
