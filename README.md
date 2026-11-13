@@ -17,7 +17,15 @@ Pré-requisitos: JDK 21+ (e Docker, só para `--postgres`; Node, quando o fronte
 ./run.sh --test       # testes do backend
 ```
 
-API em `http://localhost:8080/api/v1`. Login inicial: `admin@biblioteca.local` / `admin12345`.
+API em `http://localhost:8080/api/v1`. Localmente, já existem contas e registros de exemplo:
+
+| Tipo | Login | Senha |
+|---|---|---|
+| Administrador | `admin@biblioteca.local` | `admin12345` |
+| Funcionário | `funcionario@biblioteca.local` | `func12345` |
+| Leitor | `leitor@biblioteca.local` | `leitor12345` |
+
+O visitante não tem conta: usa as rotas públicas (`/catalog/books`). Detalhes dos registros de exemplo em [`docs/backend.md`](docs/backend.md#dados-de-exemplo).
 
 ## Estrutura (monorepo)
 

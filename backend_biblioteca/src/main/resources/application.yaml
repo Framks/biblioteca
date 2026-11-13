@@ -26,6 +26,8 @@ app:
     cookie-seguro: false
     # Senha definida para admin@biblioteca.local se ele ainda não tiver senha (AdminInicialConfig).
     admin-senha-inicial: ${ADMIN_SENHA_INICIAL:}
+  # Cria contas e registros de exemplo na primeira execução (DadosExemplo). Ligado no perfil dev.
+  dados-exemplo: false
   fuso-horario: America/Fortaleza   # define o "hoje" das regras de prazo, atraso e suspensão
   cors:
     origens-permitidas: http://localhost:5173,http://localhost:3000

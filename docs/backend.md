@@ -14,7 +14,24 @@ Pré-requisitos: JDK 21+. Docker é opcional (só para PostgreSQL).
 ```
 
 - API: `http://localhost:8080/api/v1`
-- Login inicial: `admin@biblioteca.local` / `admin12345` (troque em `PUT /auth/password`)
+
+### Dados de exemplo
+
+No perfil `dev` e no `./run.sh --postgres`, a primeira execução cria contas e registros para usar o sistema (`config/DadosExemplo.kt`, ligado por `app.dados-exemplo=true`; nunca roda nos testes nem em produção):
+
+| Tipo | Login | Senha |
+|---|---|---|
+| Administrador | `admin@biblioteca.local` | `admin12345` |
+| Funcionário | `funcionario@biblioteca.local` | `func12345` |
+| Leitor | `leitor@biblioteca.local` | `leitor12345` |
+| Visitante | sem conta: rotas públicas (`GET /catalog/books`, `GET /genres`) | |
+
+Registros (datas relativas ao dia em que o banco foi criado):
+- **8 gêneros e 12 livros** (Machado de Assis, Alencar, Graciliano, Clarice, Tolkien, Orwell...), com 1 a 3 exemplares cada; um exemplar em manutenção (*O Alienista*) e um baixado (*Eu*, que fica sem exemplar disponível).
+- **5 leitores:** Lucas Almeida (a conta de leitor; um empréstimo vencendo em 2 dias e outro já renovado), Ana Souza (empréstimo de 2 livros no prazo), **Bruno Lima (2 exemplares 5 dias atrasados)**, **Carla Mendes (suspensa: devolveu com atraso)** e Diego Rocha (cadastrado com RG; só histórico).
+- **Histórico** de empréstimos devolvidos nos meses anteriores, para os relatórios.
+
+Os dados são criados uma única vez. Para recriá-los, zere o banco: apague `backend_biblioteca/data/` (H2) ou rode `docker volume rm biblioteca-pgdata` (PostgreSQL).
 - Console do H2 (perfil dev): `http://localhost:8080/h2-console`, JDBC URL `jdbc:h2:file:./data/biblioteca`, usuário `sa`
 - Para zerar o banco de dev, apague `backend_biblioteca/data/`.
 

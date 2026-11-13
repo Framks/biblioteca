@@ -77,6 +77,7 @@ if $USAR_POSTGRES; then
   export SPRING_PROFILES_ACTIVE=prod
   export DB_URL="jdbc:postgresql://localhost:$PG_PORTA/biblioteca"
   export COOKIE_SEGURO="${COOKIE_SEGURO:-false}" # http://localhost não tem HTTPS
+  export APP_DADOSEXEMPLO="${APP_DADOSEXEMPLO:-true}" # contas e registros de exemplo (só na 1ª vez)
   if [ -z "${JWT_SEGREDO:-}" ]; then
     export JWT_SEGREDO="$(head -c 48 /dev/urandom | base64 | tr -d '\n')"
     aviso "JWT_SEGREDO não definido: gerei um aleatório (os logins caem a cada reinício)."
@@ -120,6 +121,11 @@ echo
 info "Pronto!"
 echo "  API:          $API   (coleção do Postman em docs/postman/)"
 $USAR_POSTGRES || echo "  Console H2:   http://localhost:8080/h2-console  (JDBC URL: jdbc:h2:file:./data/biblioteca)"
-echo "  Login admin:  admin@biblioteca.local / ${ADMIN_SENHA_INICIAL:-admin12345} (troque em PUT /auth/password)"
+echo
+echo "  Contas de exemplo:"
+echo "    administrador  admin@biblioteca.local        ${ADMIN_SENHA_INICIAL:-admin12345}"
+echo "    funcionário    funcionario@biblioteca.local  func12345"
+echo "    leitor         leitor@biblioteca.local       leitor12345"
+echo "    visitante      (sem login: GET /catalog/books)"
 echo "  Ctrl+C para encerrar."
 wait

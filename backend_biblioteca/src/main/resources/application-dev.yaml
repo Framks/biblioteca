@@ -11,6 +11,7 @@ spring:
       enabled: true
 
 app:
+  dados-exemplo: true
   seguranca:
     jwt-segredo: dev-segredo-local-nao-usar-em-producao-0123456789
     admin-senha-inicial: admin12345
