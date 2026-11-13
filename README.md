@@ -3,7 +3,21 @@
 Sistema de gerenciamento de biblioteca comunitária: acervo, exemplares, leitores, empréstimos, devoluções e relatórios.
 Trabalho final da disciplina de Linguagem de Programação (UFC).
 
-Requisitos completos, regras de negócio, modelagem e contrato da API: [`docs/objetivo.md`](docs/objetivo.md).
+- Requisitos, regras de negócio, modelagem e contrato da API: [`docs/objetivo.md`](docs/objetivo.md)
+- Arquitetura, convenções e testes do backend: [`docs/backend.md`](docs/backend.md)
+- Coleção do Postman (contrato para o frontend): [`docs/postman/`](docs/postman/)
+
+## Rodando localmente
+
+Pré-requisitos: JDK 21+ (e Docker, só para `--postgres`; Node, quando o frontend existir).
+
+```bash
+./run.sh              # backend (H2) + frontend
+./run.sh --postgres   # backend com PostgreSQL em Docker
+./run.sh --test       # testes do backend
+```
+
+API em `http://localhost:8080/api/v1`. Login inicial: `admin@biblioteca.local` / `admin12345`.
 
 ## Estrutura (monorepo)
 
@@ -14,7 +28,7 @@ Requisitos completos, regras de negócio, modelagem e contrato da API: [`docs/ob
 ├── docs/                 # requisitos, contrato da API, coleções do Postman
 ├── .github/workflows/    # CI
 ├── .githooks/            # hooks locais de git
-└── run.sh                # sobe o projeto inteiro localmente (em construção)
+└── run.sh                # sobe o projeto inteiro localmente
 ```
 
 ## Primeiros passos
@@ -39,7 +53,7 @@ git config core.hooksPath .githooks   # ativa o pre-commit do projeto
    - `docs: endpoints de empréstimo no Postman`
 4. Abra um Pull Request para a `master`. Para fazer o merge é preciso:
    - **1 aprovação** de outro membro do time (o autor não pode aprovar o próprio PR);
-   - o check **`md-policy`** passando;
+   - os checks **`md-policy`**, **`backend (h2)`** e **`backend (postgres)`** passando;
    - novos commits depois da aprovação invalidam a aprovação.
 5. Se o PR muda a API, atualize a coleção do Postman em `docs/postman/` no mesmo PR.
 

@@ -2,7 +2,7 @@
   "info": {
     "name": "Biblioteca Comunitária – API",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-    "description": "Contrato da API do backend (docs/objetivo.md, seção 10).\n\nVariável `baseUrl` padrão: http://localhost:8080/api/v1\n\nErros seguem o formato padrão:\n```json\n{ \"status\": 409, \"code\": \"GENRE_ALREADY_EXISTS\", \"message\": \"...\", \"fields\": [], \"timestamp\": \"2026-11-13T12:00:00Z\", \"path\": \"/api/v1/genres\" }\n```\n\nCódigos HTTP: 400 entrada inválida (VALIDATION_ERROR, INVALID_BODY, INVALID_PARAMETER, INVALID_SORT), 404 não encontrado, 409 conflito (inclui CONCURRENT_UPDATE), 422 regra de negócio (ex.: BOOK_HAS_ACTIVE_LOANS, INVALID_STATUS_TRANSITION)."
+    "description": "Contrato da API do backend (docs/objetivo.md, seção 10; detalhes em docs/backend.md).\n\n**Como usar:** rode `./run.sh` na raiz do repositório e execute **Autenticação > Login** (admin@biblioteca.local / admin12345). O token é salvo em `{{accessToken}}` e enviado em todas as requisições; os cookies ficam no cookie jar do Postman. Quando expirar (15 min), execute **Renovar token**.\n\nVariável `baseUrl`: http://localhost:8080/api/v1\n\nErros seguem o formato padrão:\n```json\n{ \"status\": 409, \"code\": \"GENRE_ALREADY_EXISTS\", \"message\": \"...\", \"fields\": [], \"timestamp\": \"2026-11-13T12:00:00Z\", \"path\": \"/api/v1/genres\" }\n```\nCódigos HTTP: 400 entrada inválida (VALIDATION_ERROR, INVALID_BODY, INVALID_PARAMETER, INVALID_SORT, INVALID_PERIOD), 401 não autenticado, 403 sem permissão, 404 não encontrado, 409 conflito (inclui CONCURRENT_UPDATE), 422 regra de negócio, 423 login bloqueado.\n\n**Erros de autenticação (qualquer rota protegida):** 401 UNAUTHENTICATED (sem token), INVALID_TOKEN (adulterado ou expirado: chame o refresh), TOKEN_REVOKED (após logout), SESSION_REVOKED (sessão encerrada, inclusive se o token for usado de outro dispositivo ou navegador); 403 FORBIDDEN (sem a permissão)."
   },
   "variable": [
     {
@@ -32,9 +32,217 @@
     {
       "key": "itemId",
       "value": "1"
+    },
+    {
+      "key": "accessToken",
+      "value": ""
+    },
+    {
+      "key": "usuarioId",
+      "value": "2"
+    },
+    {
+      "key": "perfilId",
+      "value": "2"
+    },
+    {
+      "key": "sessaoId",
+      "value": ""
     }
   ],
   "item": [
+    {
+      "name": "Autenticação",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "description": "RF15. Público. Salva o `accessToken` na variável da coleção (usada por todas as outras requisições).\n\n200:\n```json\n{ \"accessToken\": \"eyJ...\", \"tokenType\": \"Bearer\", \"expiraEm\": \"2026-11-13T12:15:00Z\", \"expiresIn\": 900, \"usuario\": { \"id\": 1, \"nome\": \"Administrador\", \"email\": \"admin@biblioteca.local\", \"perfil\": \"ADMIN\", \"permissoes\": [\"audit_read\", \"book_create\", \"...\"] } }\n```\nCookies (HttpOnly, SameSite=Strict): `refresh_token` (path /api/v1/auth) e `device_id` (path /api). O Postman guarda os dois sozinho.\n\n**Frontend:** guarde o accessToken em memória (não em localStorage), mande `Authorization: Bearer <token>` e use `fetch(..., { credentials: 'include' })` para os cookies irem junto.\n\nErros: 400 VALIDATION_ERROR, 401 INVALID_CREDENTIALS (mesma mensagem para e-mail inexistente e senha errada), 423 ACCOUNT_LOCKED (5 tentativas erradas: bloqueio de 15 min).",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@biblioteca.local\",\n  \"senha\": \"admin12345\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  pm.collectionVariables.set('accessToken', pm.response.json().accessToken);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Renovar token (refresh)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "refresh"
+              ]
+            },
+            "description": "Usa o cookie `refresh_token` (e o `device_id`). Devolve um novo access token e troca o refresh token (rotação). Chame quando uma requisição devolver 401 com `INVALID_TOKEN` e repita a requisição.\n\n200: igual ao login.\n\nErros 401: INVALID_REFRESH_TOKEN (sem cookie ou expirado), SESSION_REVOKED, REFRESH_TOKEN_REUSED (o refresh token já tinha sido usado: provável cópia, a sessão é encerrada). Em qualquer 401 aqui, mande o usuário para o login.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  pm.collectionVariables.set('accessToken', pm.response.json().accessToken);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "logout"
+              ]
+            },
+            "description": "RF16. Encerra a sessão, coloca o access token na blocklist e apaga o cookie refresh_token. 204."
+          }
+        },
+        {
+          "name": "Usuário logado",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "me"
+              ]
+            },
+            "description": "Dados e permissões do usuário logado; use as permissões para montar menus e esconder botões.\n\n200: `{ \"id\": 1, \"nome\": \"Administrador\", \"email\": \"admin@biblioteca.local\", \"perfil\": \"ADMIN\", \"permissoes\": [\"audit_read\", \"book_create\", \"...\"] }`"
+          }
+        },
+        {
+          "name": "Trocar a própria senha",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "password"
+              ]
+            },
+            "description": "Encerra as outras sessões do usuário (a atual continua). 204.\n\nErros: 400 VALIDATION_ERROR (nova senha com 8 a 72 caracteres), 422 CURRENT_PASSWORD_MISMATCH.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"senhaAtual\": \"admin12345\",\n  \"novaSenha\": \"nova-senha-forte\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Minhas sessões",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/sessions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "sessions"
+              ]
+            },
+            "description": "RF20 (session_manage_own). Sessões ativas do usuário.\n\n200: `[{ \"id\": \"6f1c...\", \"ip\": \"127.0.0.1\", \"userAgent\": \"Mozilla/5.0 ...\", \"criadoEm\": \"...\", \"ultimoAcesso\": \"...\", \"expiraEm\": \"...\", \"atual\": true }]`"
+          }
+        },
+        {
+          "name": "Encerrar sessão",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/sessions/{{sessaoId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "sessions",
+                "{{sessaoId}}"
+              ]
+            },
+            "description": "Encerra uma sessão própria (session_manage_own) ou de qualquer usuário (session_manage). 204.\n\nErros: 404 SESSION_NOT_FOUND."
+          }
+        }
+      ]
+    },
     {
       "name": "Gêneros",
       "item": [
@@ -52,7 +260,10 @@
                 "genres"
               ]
             },
-            "description": "Lista todos os gêneros em ordem alfabética (sem paginação).\n\n200: `[{ \"id\": 1, \"nome\": \"Romance\" }]`"
+            "description": "Lista todos os gêneros em ordem alfabética (sem paginação).\n\n200: `[{ \"id\": 1, \"nome\": \"Romance\" }]`",
+            "auth": {
+              "type": "noauth"
+            }
           }
         },
         {
@@ -614,6 +825,41 @@
           }
         },
         {
+          "name": "Meus empréstimos (leitor)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/loans/me?situacao=&page=0&size=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "loans",
+                "me"
+              ],
+              "query": [
+                {
+                  "key": "situacao",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "0",
+                  "disabled": false
+                },
+                {
+                  "key": "size",
+                  "value": "20",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": "loan_read_own (perfil LEITOR). Mesmo formato de 'Pesquisar empréstimos', só com os empréstimos do leitor logado."
+          }
+        },
+        {
           "name": "Buscar empréstimo",
           "request": {
             "method": "GET",
@@ -712,7 +958,7 @@
                 "renew"
               ]
             },
-            "description": "RF11. Nova data prevista = hoje + prazo padrão (nunca antes da data atual). Máximo de 2 renovações por item (`renovacoesRestantes` no response).\n\n200 com o empréstimo completo atualizado.\n\nErros: 404 LOAN_ITEM_NOT_FOUND, 422 OVERDUE_ITEM_CANNOT_BE_RENEWED (RN11), RENEWAL_LIMIT_REACHED (RN10), READER_SUSPENDED / READER_HAS_OVERDUE_LOANS (RN05), ITEM_ALREADY_RETURNED."
+            "description": "RF11. Nova data prevista = hoje + prazo padrão (nunca antes da data atual). Máximo de 2 renovações por item (`renovacoesRestantes` no response).\n\n200 com o empréstimo completo atualizado.\n\nErros: 404 LOAN_ITEM_NOT_FOUND, 422 OVERDUE_ITEM_CANNOT_BE_RENEWED (RN11), RENEWAL_LIMIT_REACHED (RN10), READER_SUSPENDED / READER_HAS_OVERDUE_LOANS (RN05), ITEM_ALREADY_RETURNED.\n\nPermissão: loan_renew (qualquer item) ou loan_renew_own (só os próprios; senão 403 FORBIDDEN)."
           }
         },
         {
@@ -749,6 +995,207 @@
               ]
             },
             "description": "RF07. Todos os empréstimos do leitor (mais recentes primeiro), com filtro opcional de `situacao`. Mesmo formato de 'Pesquisar empréstimos'.\n\nErros: 404 READER_NOT_FOUND."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Relatórios",
+      "item": [
+        {
+          "name": "Resumo da circulação",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reports/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reports",
+                "summary"
+              ]
+            },
+            "description": "RF13 (report_read).\n\n200: `{ \"dataReferencia\": \"2026-11-13\", \"emprestimosAtivos\": 2, \"emprestimosAtrasados\": 1, \"emprestimosNoPrazo\": 1, \"exemplaresEmprestados\": 3, \"exemplaresAtrasados\": 2, \"leitoresComAtraso\": 1, \"leitoresSuspensos\": 1, \"emprestimosNoMes\": 2 }`\n\nExportação CSV (RF14): mesma rota com `/export` no final e os mesmos parâmetros. Separador `;`, UTF-8 com BOM (abre direto no Excel), download com `Content-Disposition: attachment`."
+          }
+        },
+        {
+          "name": "Resumo (CSV)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reports/summary/export",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reports",
+                "summary",
+                "export"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Empréstimos por mês",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reports/loans-per-month?inicio=2026-01&fim=2026-12",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reports",
+                "loans-per-month"
+              ],
+              "query": [
+                {
+                  "key": "inicio",
+                  "value": "2026-01",
+                  "disabled": false
+                },
+                {
+                  "key": "fim",
+                  "value": "2026-12",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": "Meses no formato yyyy-MM (padrão: últimos 12). Meses sem empréstimo vêm com 0. Máximo 36 meses.\n\n200: `[{ \"mes\": \"2026-11\", \"quantidade\": 2 }]`\n\nErros: 400 INVALID_PERIOD, 400 INVALID_PARAMETER.\n\nExportação CSV (RF14): mesma rota com `/export` no final e os mesmos parâmetros. Separador `;`, UTF-8 com BOM (abre direto no Excel), download com `Content-Disposition: attachment`."
+          }
+        },
+        {
+          "name": "Empréstimos por mês (CSV)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reports/loans-per-month/export?inicio=2026-01&fim=2026-12",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reports",
+                "loans-per-month",
+                "export"
+              ],
+              "query": [
+                {
+                  "key": "inicio",
+                  "value": "2026-01",
+                  "disabled": false
+                },
+                {
+                  "key": "fim",
+                  "value": "2026-12",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Livros mais emprestados",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reports/top-books?de=2026-01-01&ate=2026-12-31&limite=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reports",
+                "top-books"
+              ],
+              "query": [
+                {
+                  "key": "de",
+                  "value": "2026-01-01",
+                  "disabled": true
+                },
+                {
+                  "key": "ate",
+                  "value": "2026-12-31",
+                  "disabled": true
+                },
+                {
+                  "key": "limite",
+                  "value": "10",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": "Datas opcionais (sem elas: todo o histórico). `limite` de 1 a 100.\n\n200: `[{ \"posicao\": 1, \"livroId\": 1, \"titulo\": \"Duna\", \"autor\": \"Frank Herbert\", \"emprestimos\": 2 }]`\n\nExportação CSV (RF14): mesma rota com `/export` no final e os mesmos parâmetros. Separador `;`, UTF-8 com BOM (abre direto no Excel), download com `Content-Disposition: attachment`."
+          }
+        },
+        {
+          "name": "Livros mais emprestados (CSV)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reports/top-books/export?limite=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reports",
+                "top-books",
+                "export"
+              ],
+              "query": [
+                {
+                  "key": "limite",
+                  "value": "10",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Leitores em atraso",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reports/overdue-readers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reports",
+                "overdue-readers"
+              ]
+            },
+            "description": "Do maior atraso para o menor.\n\n200: `[{ \"leitorId\": 3, \"nome\": \"Bruno\", \"email\": null, \"telefone\": \"(88) 9...\", \"exemplaresAtrasados\": 2, \"maiorAtrasoDias\": 5, \"vencidoDesde\": \"2026-11-08\", \"titulos\": [\"Iracema\", \"Senhora\"] }]`\n\nExportação CSV (RF14): mesma rota com `/export` no final e os mesmos parâmetros. Separador `;`, UTF-8 com BOM (abre direto no Excel), download com `Content-Disposition: attachment`."
+          }
+        },
+        {
+          "name": "Leitores em atraso (CSV)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reports/overdue-readers/export",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reports",
+                "overdue-readers",
+                "export"
+              ]
+            },
+            "description": ""
           }
         }
       ]
@@ -808,6 +1255,322 @@
       ]
     },
     {
+      "name": "Usuários",
+      "item": [
+        {
+          "name": "Pesquisar usuários da equipe",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users?busca=&page=0&size=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users"
+              ],
+              "query": [
+                {
+                  "key": "busca",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "0",
+                  "disabled": false
+                },
+                {
+                  "key": "size",
+                  "value": "20",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": "RF17 (user_manage). Funcionários e administradores ativos.\n\n200: página de `{ \"id\": 1, \"nome\": \"Administrador\", \"email\": \"admin@biblioteca.local\", \"telefone\": null, \"perfil\": \"ADMIN\", \"bloqueadoAte\": null, \"dataCadastro\": \"...\", \"dataAtualizacao\": \"...\" }`"
+          }
+        },
+        {
+          "name": "Buscar usuário",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{usuarioId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{usuarioId}}"
+              ]
+            },
+            "description": "Erros: 404 USER_NOT_FOUND."
+          }
+        },
+        {
+          "name": "Cadastrar usuário",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users"
+              ]
+            },
+            "description": "`perfil`: FUNCIONARIO ou ADMIN. Senha de 8 a 72 caracteres. 201.\n\nErros: 400 VALIDATION_ERROR, 409 EMAIL_ALREADY_EXISTS.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Carlos\",\n  \"email\": \"carlos@biblioteca.local\",\n  \"senha\": \"senha-do-carlos\",\n  \"perfil\": \"FUNCIONARIO\",\n  \"telefone\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Atualizar usuário",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{usuarioId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{usuarioId}}"
+              ]
+            },
+            "description": "Erros: 400, 404 USER_NOT_FOUND, 409 EMAIL_ALREADY_EXISTS, 422 LAST_ADMIN (rebaixaria o único administrador).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Carlos\",\n  \"email\": \"carlos@biblioteca.local\",\n  \"perfil\": \"ADMIN\",\n  \"telefone\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Redefinir senha",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{usuarioId}}/password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{usuarioId}}",
+                "password"
+              ]
+            },
+            "description": "Define nova senha, desbloqueia o login e encerra todas as sessões do usuário. 204.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"senha\": \"nova-senha-123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Inativar usuário",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{usuarioId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{usuarioId}}"
+              ]
+            },
+            "description": "Encerra todas as sessões dele. 204.\n\nErros: 404, 422 CANNOT_DEACTIVATE_SELF, 422 LAST_ADMIN."
+          }
+        },
+        {
+          "name": "Sessões de um usuário",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{usuarioId}}/sessions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{usuarioId}}",
+                "sessions"
+              ]
+            },
+            "description": "session_manage. Para encerrar, use DELETE /auth/sessions/{id}."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Perfis e permissões",
+      "item": [
+        {
+          "name": "Listar perfis",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/roles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "roles"
+              ]
+            },
+            "description": "RF18 (role_manage).\n\n200: `[{ \"id\": 2, \"nome\": \"LEITOR\", \"descricao\": \"...\", \"editavel\": true, \"permissoes\": [\"book_read\", \"loan_read_own\", \"loan_renew_own\", \"session_manage_own\"] }]`\n\nADMIN e VISITANTE não são editáveis."
+          }
+        },
+        {
+          "name": "Listar permissões",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/permissions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "permissions"
+              ]
+            },
+            "description": "Os 24 códigos da seção 7: `[{ \"codigo\": \"book_create\", \"descricao\": \"Cadastrar livro\" }]`"
+          }
+        },
+        {
+          "name": "Alterar permissões do perfil",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/roles/{{perfilId}}/permissions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "roles",
+                "{{perfilId}}",
+                "permissions"
+              ]
+            },
+            "description": "Substitui a lista inteira. Vale na próxima requisição de quem tem o perfil.\n\nErros: 400 UNKNOWN_PERMISSION, 404 ROLE_NOT_FOUND, 422 ROLE_NOT_EDITABLE.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"permissoes\": [\n    \"book_read\",\n    \"loan_read_own\",\n    \"loan_renew_own\",\n    \"session_manage_own\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auditoria",
+      "item": [
+        {
+          "name": "Pesquisar auditoria",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/audit?acao=LOGIN_FALHA&usuarioId=&de=2026-11-01&ate=2026-11-30&page=0&size=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "audit"
+              ],
+              "query": [
+                {
+                  "key": "acao",
+                  "value": "LOGIN_FALHA",
+                  "disabled": true
+                },
+                {
+                  "key": "usuarioId",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "de",
+                  "value": "2026-11-01",
+                  "disabled": true
+                },
+                {
+                  "key": "ate",
+                  "value": "2026-11-30",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "0",
+                  "disabled": false
+                },
+                {
+                  "key": "size",
+                  "value": "50",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": "RF21 (audit_read). Mais recentes primeiro.\n\n200: página de `{ \"id\": 10, \"dataHora\": \"...\", \"acao\": \"EMPRESTIMO_REGISTRADO\", \"usuario\": { \"id\": 1, \"nome\": \"Administrador\" }, \"entidade\": \"Emprestimo\", \"entidadeId\": 3, \"detalhes\": \"leitor 2; exemplares LIV000001-EX01\", \"ip\": \"127.0.0.1\" }`\n\nAções: LOGIN_SUCESSO, LOGIN_FALHA, LOGIN_CONTA_BLOQUEADA, CONTA_BLOQUEADA, LOGOUT, SESSAO_REVOGADA, REFRESH_TOKEN_REUSADO, IP_ALTERADO, SENHA_ALTERADA, GENERO_CRIADO, GENERO_ATUALIZADO, LIVRO_CRIADO, LIVRO_ATUALIZADO, LIVRO_INATIVADO, EXEMPLARES_CRIADOS, EXEMPLAR_ATUALIZADO, LEITOR_CRIADO, LEITOR_ATUALIZADO, LEITOR_INATIVADO, LEITOR_ACESSO_HABILITADO, USUARIO_CRIADO, USUARIO_ATUALIZADO, USUARIO_INATIVADO, USUARIO_SENHA_REDEFINIDA, PERFIL_PERMISSOES_ALTERADAS, EMPRESTIMO_REGISTRADO, DEVOLUCAO_REGISTRADA, RENOVACAO_REGISTRADA, CONFIGURACAO_ALTERADA."
+          }
+        }
+      ]
+    },
+    {
       "name": "Catálogo público",
       "item": [
         {
@@ -857,10 +1620,23 @@
                 }
               ]
             },
-            "description": "Consulta pública para visitantes (RF05): não exige login (também após a fase de segurança).\n\n200:\n```json\n{ \"content\": [{ \"id\": 1, \"titulo\": \"Dom Casmurro\", \"autor\": \"Machado de Assis\", \"editora\": \"Penguin\", \"anoPublicacao\": 1899, \"generos\": [\"Romance\"], \"exemplaresDisponiveis\": 2, \"disponivel\": true }], \"page\": 0, \"size\": 20, \"totalElements\": 1, \"totalPages\": 1 }\n```"
+            "description": "Consulta pública para visitantes (RF05): não exige login (também após a fase de segurança).\n\n200:\n```json\n{ \"content\": [{ \"id\": 1, \"titulo\": \"Dom Casmurro\", \"autor\": \"Machado de Assis\", \"editora\": \"Penguin\", \"anoPublicacao\": 1899, \"generos\": [\"Romance\"], \"exemplaresDisponiveis\": 2, \"disponivel\": true }], \"page\": 0, \"size\": 20, \"totalElements\": 1, \"totalPages\": 1 }\n```",
+            "auth": {
+              "type": "noauth"
+            }
           }
         }
       ]
     }
-  ]
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  }
 }
