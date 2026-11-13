@@ -10,10 +10,12 @@ import org.springframework.http.HttpStatus
 import org.springframework.orm.ObjectOptimisticLockingFailureException
 import org.springframework.http.ResponseEntity
 import org.springframework.http.converter.HttpMessageNotReadableException
+import org.springframework.security.access.AccessDeniedException
 import org.springframework.web.HttpRequestMethodNotSupportedException
 import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
+import org.springframework.web.method.annotation.HandlerMethodValidationException
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException
 import org.springframework.web.servlet.resource.NoResourceFoundException
 import java.time.Clock
@@ -54,6 +56,20 @@ class GlobalExceptionHandler(private val clock: Clock) {
     @ExceptionHandler(HttpRequestMethodNotSupportedException::class)
     fun metodoNaoSuportado(ex: HttpRequestMethodNotSupportedException, req: HttpServletRequest) =
         erro(HttpStatus.METHOD_NOT_ALLOWED, "METHOD_NOT_ALLOWED", "Método ${ex.method} não suportado nesta rota.", req)
+
+    /** @PreAuthorize negado: usuário logado sem a permissão exigida. */
+    @ExceptionHandler(AccessDeniedException::class)
+    fun acessoNegado(ex: AccessDeniedException, req: HttpServletRequest) =
+        erro(HttpStatus.FORBIDDEN, "FORBIDDEN", "Você não tem permissão para esta ação.", req)
+
+    /** Validação de parâmetros de query/caminho (ex.: @Min em ?limite=). */
+    @ExceptionHandler(HandlerMethodValidationException::class)
+    fun validacaoParametros(ex: HandlerMethodValidationException, req: HttpServletRequest): ResponseEntity<ErroResponse> {
+        val campos = ex.parameterValidationResults.flatMap { resultado ->
+            resultado.resolvableErrors.map { CampoErro(resultado.methodParameter.parameterName ?: "?", it.defaultMessage ?: "inválido") }
+        }
+        return erro(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "Dados inválidos.", req, campos)
+    }
 
     /** Duas pessoas alteraram o mesmo registro ao mesmo tempo (ex.: o mesmo exemplar emprestado em dois balcões). */
     @ExceptionHandler(ObjectOptimisticLockingFailureException::class)

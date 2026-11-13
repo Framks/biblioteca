@@ -10,6 +10,8 @@ import jakarta.persistence.FetchType
 import jakarta.persistence.JoinColumn
 import jakarta.persistence.ManyToOne
 import jakarta.persistence.Table
+import java.time.Duration
+import java.time.Instant
 import java.time.LocalDate
 
 /**
@@ -46,8 +48,39 @@ class Usuario(
     var suspensoAte: LocalDate? = null
         protected set
 
+    /** 6.1: tentativas de login erradas seguidas. */
+    var tentativasLoginFalhas: Int = 0
+        protected set
+
+    /** 6.1: login bloqueado até este instante. */
+    var bloqueadoAte: Instant? = null
+        protected set
+
     val acessoHabilitado: Boolean
         get() = senhaHash != null
+
+    val ativo: Boolean
+        get() = status == StatusRegistro.ATIVO
+
+    fun estaBloqueado(agora: Instant): Boolean = bloqueadoAte?.isAfter(agora) ?: false
+
+    /** 6.1: conta a falha; ao atingir [maxTentativas], bloqueia por [minutosBloqueio]. Retorna true se bloqueou agora. */
+    fun registrarFalhaLogin(maxTentativas: Int, minutosBloqueio: Int, agora: Instant): Boolean {
+        tentativasLoginFalhas++
+        if (tentativasLoginFalhas < maxTentativas) return false
+        bloqueadoAte = agora.plus(Duration.ofMinutes(minutosBloqueio.toLong()))
+        tentativasLoginFalhas = 0
+        return true
+    }
+
+    fun registrarLoginComSucesso() {
+        tentativasLoginFalhas = 0
+        bloqueadoAte = null
+    }
+
+    fun alterarPerfil(novoPerfil: Perfil) {
+        perfil = novoPerfil
+    }
 
     fun atualizarDados(
         nome: String,

@@ -3,6 +3,7 @@ package com.biblioteca.gerenciador.facades
 import com.biblioteca.gerenciador.domain.ContagemExemplares
 import com.biblioteca.gerenciador.domain.FiltroLivro
 import com.biblioteca.gerenciador.domain.Livro
+import com.biblioteca.gerenciador.enums.AcaoAuditoria
 import com.biblioteca.gerenciador.exceptions.NegocioException
 import com.biblioteca.gerenciador.mappers.aplicarEm
 import com.biblioteca.gerenciador.mappers.toCatalogoResponse
@@ -12,6 +13,7 @@ import com.biblioteca.gerenciador.rest.requests.LivroRequest
 import com.biblioteca.gerenciador.rest.responses.CatalogoLivroResponse
 import com.biblioteca.gerenciador.rest.responses.LivroResponse
 import com.biblioteca.gerenciador.rest.responses.PageResponse
+import com.biblioteca.gerenciador.services.AuditoriaService
 import com.biblioteca.gerenciador.services.ExemplarService
 import com.biblioteca.gerenciador.services.GeneroService
 import com.biblioteca.gerenciador.services.LivroService
@@ -30,6 +32,7 @@ class LivroFacade(
     private val generoService: GeneroService,
     private val exemplarService: ExemplarService,
     private val usuarioLogado: UsuarioLogado,
+    private val auditoria: AuditoriaService,
 ) {
 
     @Transactional(readOnly = true)
@@ -53,7 +56,9 @@ class LivroFacade(
     @Transactional
     fun criar(request: LivroRequest): LivroResponse {
         val generos = generoService.buscarTodos(request.generoIds)
-        return responder(livroService.salvar(request.toEntity(generos, usuarioLogado.obter())))
+        val livro = livroService.salvar(request.toEntity(generos, usuarioLogado.obter()))
+        auditoria.registrar(AcaoAuditoria.LIVRO_CRIADO, "Livro", livro.id, livro.titulo)
+        return responder(livro)
     }
 
     @Transactional
@@ -61,7 +66,9 @@ class LivroFacade(
         val livro = livroService.buscarAtivo(id)
         val generos = generoService.buscarTodos(request.generoIds)
         request.aplicarEm(livro, generos)
-        return responder(livroService.salvar(livro))
+        livroService.salvar(livro)
+        auditoria.registrar(AcaoAuditoria.LIVRO_ATUALIZADO, "Livro", livro.id, livro.titulo)
+        return responder(livro)
     }
 
     /** RN13: não é possível inativar livro com exemplar emprestado. */
@@ -72,6 +79,7 @@ class LivroFacade(
             throw NegocioException("BOOK_HAS_ACTIVE_LOANS", "O livro possui exemplares emprestados e não pode ser inativado.")
         }
         livroService.inativar(livro)
+        auditoria.registrar(AcaoAuditoria.LIVRO_INATIVADO, "Livro", livro.id, livro.titulo)
     }
 
     private fun responder(livro: Livro) = livro.toResponse(contar(listOf(livro)).de(livro))

@@ -10,6 +10,7 @@ import jakarta.validation.Valid
 import org.springframework.data.domain.Pageable
 import org.springframework.data.web.PageableDefault
 import org.springframework.http.ResponseEntity
+import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -26,6 +27,7 @@ import java.net.URI
 class LivroController(private val facade: LivroFacade) {
 
     /** GET /books?titulo=&autor=&isbn=&generoId=&disponibilidade=DISPONIVEL&page=0&size=20&sort=titulo,asc */
+    @PreAuthorize("hasAuthority('book_read')")
     @GetMapping
     fun pesquisar(
         @RequestParam(required = false) titulo: String?,
@@ -39,19 +41,23 @@ class LivroController(private val facade: LivroFacade) {
         pageable.validarOrdenacao(*ORDENACAO_LIVRO),
     )
 
+    @PreAuthorize("hasAuthority('book_read')")
     @GetMapping("/{id}")
     fun buscar(@PathVariable id: Long): LivroResponse = facade.buscar(id)
 
+    @PreAuthorize("hasAuthority('book_create')")
     @PostMapping
     fun criar(@Valid @RequestBody request: LivroRequest): ResponseEntity<LivroResponse> {
         val criado = facade.criar(request)
         return ResponseEntity.created(URI.create("/api/v1/books/${criado.id}")).body(criado)
     }
 
+    @PreAuthorize("hasAuthority('book_update')")
     @PutMapping("/{id}")
     fun atualizar(@PathVariable id: Long, @Valid @RequestBody request: LivroRequest): LivroResponse =
         facade.atualizar(id, request)
 
+    @PreAuthorize("hasAuthority('book_delete')")
     @DeleteMapping("/{id}")
     fun inativar(@PathVariable id: Long): ResponseEntity<Unit> {
         facade.inativar(id)

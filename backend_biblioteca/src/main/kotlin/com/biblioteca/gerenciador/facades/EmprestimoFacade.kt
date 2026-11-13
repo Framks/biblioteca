@@ -1,7 +1,9 @@
 package com.biblioteca.gerenciador.facades
 
 import com.biblioteca.gerenciador.domain.Emprestimo
+import com.biblioteca.gerenciador.enums.AcaoAuditoria
 import com.biblioteca.gerenciador.enums.SituacaoEmprestimo
+import com.biblioteca.gerenciador.exceptions.ProibidoException
 import com.biblioteca.gerenciador.mappers.semBrancos
 import com.biblioteca.gerenciador.mappers.toDevolucoes
 import com.biblioteca.gerenciador.mappers.toResponse
@@ -9,6 +11,7 @@ import com.biblioteca.gerenciador.rest.requests.DevolucaoRequest
 import com.biblioteca.gerenciador.rest.requests.EmprestimoRequest
 import com.biblioteca.gerenciador.rest.responses.EmprestimoResponse
 import com.biblioteca.gerenciador.rest.responses.PageResponse
+import com.biblioteca.gerenciador.services.AuditoriaService
 import com.biblioteca.gerenciador.services.EmprestimoService
 import com.biblioteca.gerenciador.services.ExemplarService
 import com.biblioteca.gerenciador.services.Relogio
@@ -30,6 +33,7 @@ class EmprestimoFacade(
     private val exemplarService: ExemplarService,
     private val usuarioLogado: UsuarioLogado,
     private val relogio: Relogio,
+    private val auditoria: AuditoriaService,
 ) {
 
     @Transactional(readOnly = true)
@@ -48,6 +52,11 @@ class EmprestimoFacade(
         return pesquisar(leitorId, null, situacao, pageable)
     }
 
+    /** Empréstimos do próprio leitor logado. */
+    @Transactional(readOnly = true)
+    fun meus(situacao: SituacaoEmprestimo?, pageable: Pageable): PageResponse<EmprestimoResponse> =
+        pesquisar(usuarioLogado.autenticado().usuarioId, null, situacao, pageable)
+
     @Transactional(readOnly = true)
     fun buscar(id: Long): EmprestimoResponse = responder(emprestimoService.buscar(id))
 
@@ -64,6 +73,10 @@ class EmprestimoFacade(
             hoje = relogio.hoje(),
             agora = relogio.agora(),
         )
+        auditoria.registrar(
+            AcaoAuditoria.EMPRESTIMO_REGISTRADO, "Emprestimo", emprestimo.id,
+            "leitor ${leitor.id}; exemplares ${exemplares.joinToString { it.codigo }}",
+        )
         return responder(emprestimo)
     }
 
@@ -76,12 +89,25 @@ class EmprestimoFacade(
             hoje = relogio.hoje(),
             agora = relogio.agora(),
         )
+        auditoria.registrar(
+            AcaoAuditoria.DEVOLUCAO_REGISTRADA, "Emprestimo", emprestimo.id,
+            request.itens.joinToString { "item ${it.itemId}: ${it.condicao}" },
+        )
         return responder(emprestimo)
     }
 
     @Transactional
     fun renovar(itemId: Long): EmprestimoResponse {
-        val item = emprestimoService.renovar(emprestimoService.buscarItem(itemId), relogio.hoje())
+        val item = emprestimoService.buscarItem(itemId)
+        val logado = usuarioLogado.autenticado()
+        if (!logado.possui("loan_renew") && item.emprestimo.leitor.id != logado.usuarioId) {
+            throw ProibidoException("Você só pode renovar os seus próprios empréstimos.")
+        }
+        emprestimoService.renovar(item, relogio.hoje())
+        auditoria.registrar(
+            AcaoAuditoria.RENOVACAO_REGISTRADA, "Emprestimo", item.emprestimo.id,
+            "item ${item.id}: nova data ${item.dataDevolucaoPrevista}",
+        )
         return responder(item.emprestimo)
     }
 

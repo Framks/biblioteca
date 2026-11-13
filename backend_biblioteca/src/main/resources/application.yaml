@@ -19,6 +19,13 @@ server:
   port: 8080
 
 app:
+  seguranca:
+    # HS256: pelo menos 32 caracteres. Cada perfil define o seu; em produção vem de JWT_SEGREDO.
+    jwt-segredo: ${JWT_SEGREDO:}
+    # Cookies só por HTTPS. Desligado em dev/test (http://localhost).
+    cookie-seguro: false
+    # Senha definida para admin@biblioteca.local se ele ainda não tiver senha (AdminInicialConfig).
+    admin-senha-inicial: ${ADMIN_SENHA_INICIAL:}
   fuso-horario: America/Fortaleza   # define o "hoje" das regras de prazo, atraso e suspensão
   cors:
     origens-permitidas: http://localhost:5173,http://localhost:3000

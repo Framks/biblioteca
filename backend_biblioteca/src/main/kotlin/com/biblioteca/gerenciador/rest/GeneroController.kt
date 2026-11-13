@@ -5,6 +5,7 @@ import com.biblioteca.gerenciador.rest.requests.GeneroRequest
 import com.biblioteca.gerenciador.rest.responses.GeneroResponse
 import jakarta.validation.Valid
 import org.springframework.http.ResponseEntity
+import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
@@ -21,12 +22,14 @@ class GeneroController(private val facade: GeneroFacade) {
     @GetMapping
     fun listar(): List<GeneroResponse> = facade.listar()
 
+    @PreAuthorize("hasAuthority('genre_manage')")
     @PostMapping
     fun criar(@Valid @RequestBody request: GeneroRequest): ResponseEntity<GeneroResponse> {
         val criado = facade.criar(request)
         return ResponseEntity.created(URI.create("/api/v1/genres/${criado.id}")).body(criado)
     }
 
+    @PreAuthorize("hasAuthority('genre_manage')")
     @PutMapping("/{id}")
     fun atualizar(@PathVariable id: Long, @Valid @RequestBody request: GeneroRequest): GeneroResponse =
         facade.atualizar(id, request)

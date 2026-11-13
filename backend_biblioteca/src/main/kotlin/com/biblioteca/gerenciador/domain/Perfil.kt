@@ -24,6 +24,18 @@ class Perfil(
 
     fun possui(codigoPermissao: String): Boolean = permissoes.any { it.codigo == codigoPermissao }
 
+    /**
+     * ADMIN não é editável (evita alguém tirar do administrador a permissão de administrar e ninguém mais conseguir).
+     * VISITANTE também não: o acesso anônimo é definido pelas rotas públicas, não por permissões.
+     */
+    val editavel: Boolean
+        get() = nome != ADMIN && nome != VISITANTE
+
+    fun substituirPermissoes(novas: Collection<Permissao>) {
+        permissoes.clear()
+        permissoes.addAll(novas)
+    }
+
     companion object {
         // Perfis criados pela migration V3.
         const val VISITANTE = "VISITANTE"

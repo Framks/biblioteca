@@ -17,7 +17,7 @@ class Relogio(
     private val clock: Clock,
     @Value("\${app.fuso-horario}") fusoHorario: String,
 ) {
-    private val zona: ZoneId = ZoneId.of(fusoHorario)
+    val zona: ZoneId = ZoneId.of(fusoHorario)
 
     fun agora(): Instant = Instant.now(clock)
 

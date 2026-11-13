@@ -10,12 +10,20 @@ import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.jpa.repository.QueryHints
+import java.time.LocalDate
 
 interface UsuarioRepository : JpaRepository<Usuario, Long> {
 
     fun findByEmail(email: String): Usuario?
 
+    /** Relatório: leitores ativos com suspensão vigente (suspensoAte é inclusive). */
+    fun countByPerfilNomeAndStatusAndSuspensoAteGreaterThanEqual(perfil: String, status: StatusRegistro, hoje: LocalDate): Long
+
     fun findByIdAndPerfilNomeAndStatus(id: Long, perfil: String, status: StatusRegistro): Usuario?
+
+    fun findByIdAndPerfilNomeInAndStatus(id: Long, perfis: Collection<String>, status: StatusRegistro): Usuario?
+
+    fun countByPerfilNomeAndStatus(perfil: String, status: StatusRegistro): Long
 
     // Consultas de unicidade não podem disparar o auto-flush (ver comentário em LivroRepository).
     @QueryHints(QueryHint(name = HibernateHints.HINT_FLUSH_MODE, value = "COMMIT"))
@@ -37,7 +45,7 @@ interface UsuarioRepository : JpaRepository<Usuario, Long> {
     @Query(
         """
         select u from Usuario u
-        where u.perfil.nome = :perfil
+        where u.perfil.nome in :perfis
           and u.status = :status
           and (lower(u.nome) like :padraoTexto
             or lower(u.email) like :padraoTexto
@@ -45,7 +53,7 @@ interface UsuarioRepository : JpaRepository<Usuario, Long> {
         """,
     )
     fun pesquisar(
-        perfil: String,
+        perfis: Collection<String>,
         padraoTexto: String,
         padraoDocumento: String,
         status: StatusRegistro,

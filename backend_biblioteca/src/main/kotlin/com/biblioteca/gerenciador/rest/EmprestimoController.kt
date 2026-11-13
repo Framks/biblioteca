@@ -11,6 +11,7 @@ import org.springframework.data.domain.Pageable
 import org.springframework.data.domain.Sort
 import org.springframework.data.web.PageableDefault
 import org.springframework.http.ResponseEntity
+import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
@@ -25,6 +26,7 @@ import java.net.URI
 class EmprestimoController(private val facade: EmprestimoFacade) {
 
     /** GET /loans?situacao=ATRASADO&leitorId=&livroId=&page=0&size=20 (RF12). Mais recentes primeiro. */
+    @PreAuthorize("hasAuthority('loan_read')")
     @GetMapping("/loans")
     fun pesquisar(
         @RequestParam(required = false) situacao: SituacaoEmprestimo?,
@@ -35,6 +37,7 @@ class EmprestimoController(private val facade: EmprestimoFacade) {
         facade.pesquisar(leitorId, livroId, situacao, pageable.validarOrdenacao(*ORDENACAO_EMPRESTIMO))
 
     /** Histórico do leitor (RF07). */
+    @PreAuthorize("hasAuthority('loan_read')")
     @GetMapping("/readers/{leitorId}/loans")
     fun historicoDoLeitor(
         @PathVariable leitorId: Long,
@@ -43,19 +46,32 @@ class EmprestimoController(private val facade: EmprestimoFacade) {
     ): PageResponse<EmprestimoResponse> =
         facade.historicoDoLeitor(leitorId, situacao, pageable.validarOrdenacao(*ORDENACAO_EMPRESTIMO))
 
+    /** Empréstimos do leitor logado (perfil LEITOR). */
+    @PreAuthorize("hasAuthority('loan_read_own')")
+    @GetMapping("/loans/me")
+    fun meus(
+        @RequestParam(required = false) situacao: SituacaoEmprestimo?,
+        @PageableDefault(size = 20, sort = ["dataEmprestimo"], direction = Sort.Direction.DESC) pageable: Pageable,
+    ): PageResponse<EmprestimoResponse> = facade.meus(situacao, pageable.validarOrdenacao(*ORDENACAO_EMPRESTIMO))
+
+    @PreAuthorize("hasAuthority('loan_read')")
     @GetMapping("/loans/{id}")
     fun buscar(@PathVariable id: Long): EmprestimoResponse = facade.buscar(id)
 
+    @PreAuthorize("hasAuthority('loan_create')")
     @PostMapping("/loans")
     fun registrar(@Valid @RequestBody request: EmprestimoRequest): ResponseEntity<EmprestimoResponse> {
         val criado = facade.registrar(request)
         return ResponseEntity.created(URI.create("/api/v1/loans/${criado.id}")).body(criado)
     }
 
+    @PreAuthorize("hasAuthority('loan_return')")
     @PostMapping("/loans/{id}/return")
     fun devolver(@PathVariable id: Long, @Valid @RequestBody request: DevolucaoRequest): EmprestimoResponse =
         facade.devolver(id, request)
 
+    /** Funcionário (loan_renew) renova qualquer item; leitor (loan_renew_own), só os próprios. */
+    @PreAuthorize("hasAnyAuthority('loan_renew', 'loan_renew_own')")
     @PostMapping("/loans/items/{itemId}/renew")
     fun renovar(@PathVariable itemId: Long): EmprestimoResponse = facade.renovar(itemId)
 

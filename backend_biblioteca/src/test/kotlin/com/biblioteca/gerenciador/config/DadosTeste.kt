@@ -18,6 +18,8 @@ import com.biblioteca.gerenciador.repositories.LivroRepository
 import com.biblioteca.gerenciador.repositories.PerfilRepository
 import com.biblioteca.gerenciador.repositories.UsuarioRepository
 import org.springframework.boot.test.context.TestComponent
+import org.springframework.security.crypto.password.PasswordEncoder
+import java.time.Instant
 import java.time.LocalDate
 
 /** Fábrica de dados para preparar o cenário ("dado que...") direto no banco. */
@@ -29,6 +31,7 @@ class DadosTeste(
     private val usuarioRepository: UsuarioRepository,
     private val perfilRepository: PerfilRepository,
     private val emprestimoRepository: EmprestimoRepository,
+    private val passwordEncoder: PasswordEncoder,
 ) {
 
     fun genero(nome: String = "Romance"): Genero = generoRepository.save(Genero(nome))
@@ -80,10 +83,30 @@ class DadosTeste(
         leitor: Usuario,
         vararg exemplares: Exemplar,
         dataPrevista: LocalDate = HOJE.plusDays(14),
+        dataEmprestimo: Instant = AGORA,
     ): Emprestimo {
-        val emprestimo = Emprestimo(leitor = leitor, operador = admin(), dataEmprestimo = AGORA)
+        val emprestimo = Emprestimo(leitor = leitor, operador = admin(), dataEmprestimo = dataEmprestimo)
         exemplares.forEach { emprestimo.adicionarItem(it, dataPrevista) }
         return emprestimoRepository.save(emprestimo)
+    }
+
+    /** Usuário com login habilitado (leitor, funcionário ou administrador). */
+    fun usuarioComAcesso(
+        perfil: String,
+        email: String,
+        senha: String = "senha-correta-123",
+        nome: String = "Usuário $perfil",
+        cpf: String? = null,
+    ): Usuario {
+        val usuario = Usuario(
+            nome = nome,
+            perfil = perfilRepository.findByNome(perfil)!!,
+            email = email,
+            tipoDocumento = cpf?.let { TipoDocumento.CPF },
+            documento = cpf,
+        )
+        usuario.definirSenha(passwordEncoder.encode(senha)!!)
+        return usuarioRepository.save(usuario)
     }
 
     /** Suspende o leitor por [dias] dias a partir de hoje. */

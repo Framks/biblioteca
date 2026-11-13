@@ -27,3 +27,15 @@ class NegocioException(codigo: String, mensagem: String) :
 /** 400: requisição inválida que não é erro de validação de campo (ex.: ordenação não permitida). */
 class RequisicaoInvalidaException(codigo: String, mensagem: String) :
     ApiException(HttpStatus.BAD_REQUEST, codigo, mensagem)
+
+/** 401: não autenticado, token/sessão inválidos ou credenciais erradas. */
+class NaoAutenticadoException(codigo: String, mensagem: String) :
+    ApiException(HttpStatus.UNAUTHORIZED, codigo, mensagem)
+
+/** 403: autenticado, mas sem permissão para esta ação. */
+class ProibidoException(mensagem: String = "Você não tem permissão para esta ação.") :
+    ApiException(HttpStatus.FORBIDDEN, "FORBIDDEN", mensagem)
+
+/** 423: login bloqueado temporariamente após várias tentativas erradas (seção 6.1). */
+class ContaBloqueadaException(mensagem: String) :
+    ApiException(HttpStatus.LOCKED, "ACCOUNT_LOCKED", mensagem)

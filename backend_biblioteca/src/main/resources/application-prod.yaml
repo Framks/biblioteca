@@ -6,5 +6,8 @@ spring:
     password: ${DB_PASSWORD:biblioteca}
 
 app:
+  seguranca:
+    jwt-segredo: ${JWT_SEGREDO}          # obrigatório (a aplicação não sobe sem ele)
+    cookie-seguro: ${COOKIE_SEGURO:true}
   cors:
     origens-permitidas: ${CORS_ORIGENS:http://localhost:5173}

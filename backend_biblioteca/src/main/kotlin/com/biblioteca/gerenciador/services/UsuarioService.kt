@@ -22,7 +22,7 @@ class UsuarioService(
         val termo = busca?.trim()?.lowercase().orEmpty()
         val digitos = termo.filter(Char::isLetterOrDigit).uppercase()
         return repository.pesquisar(
-            perfil = Perfil.LEITOR,
+            perfis = listOf(Perfil.LEITOR),
             padraoTexto = if (termo.isEmpty()) "%" else "%$termo%",
             // Sem letras/dígitos no termo, o documento não deve casar com tudo: "" só casa com documento vazio.
             padraoDocumento = if (termo.isEmpty()) "%" else if (digitos.isEmpty()) "" else "%$digitos%",
@@ -30,6 +30,29 @@ class UsuarioService(
             pageable = pageable,
         )
     }
+
+    /** Funcionários e administradores (RF17). */
+    fun pesquisarEquipe(busca: String?, pageable: Pageable): Page<Usuario> {
+        val termo = busca?.trim()?.lowercase().orEmpty()
+        return repository.pesquisar(
+            perfis = PERFIS_EQUIPE,
+            padraoTexto = if (termo.isEmpty()) "%" else "%$termo%",
+            padraoDocumento = if (termo.isEmpty()) "%" else "",
+            status = StatusRegistro.ATIVO,
+            pageable = pageable,
+        )
+    }
+
+    fun buscarMembroEquipe(id: Long): Usuario =
+        repository.findByIdAndPerfilNomeInAndStatus(id, PERFIS_EQUIPE, StatusRegistro.ATIVO)
+            ?: throw NaoEncontradoException("USER_NOT_FOUND", "Usuário $id não encontrado.")
+
+    fun buscarPorEmail(email: String): Usuario? = repository.findByEmail(email.trim().lowercase())
+
+    fun senhaConfere(usuario: Usuario, senha: String): Boolean =
+        usuario.senhaHash?.let { passwordEncoder.matches(senha, it) } ?: false
+
+    fun contarAdministradoresAtivos(): Long = repository.countByPerfilNomeAndStatus(Perfil.ADMIN, StatusRegistro.ATIVO)
 
     /** Leitores inativos e usuários de outros perfis são tratados como inexistentes. */
     fun buscarLeitor(id: Long): Usuario =
@@ -51,6 +74,10 @@ class UsuarioService(
     fun inativar(usuario: Usuario) {
         usuario.inativar()
         repository.save(usuario)
+    }
+
+    companion object {
+        val PERFIS_EQUIPE = listOf(Perfil.FUNCIONARIO, Perfil.ADMIN)
     }
 
     private fun validarEmailUnico(usuario: Usuario) {
