@@ -1,0 +1,20 @@
+package com.biblioteca.gerenciador.config
+
+import org.springframework.beans.factory.annotation.Value
+import org.springframework.context.annotation.Configuration
+import org.springframework.web.servlet.config.annotation.CorsRegistry
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer
+
+/** Libera o frontend (outra porta/origem) para chamar a API. */
+@Configuration
+class WebConfig(
+    @Value("\${app.cors.origens-permitidas}") private val origensPermitidas: List<String>,
+) : WebMvcConfigurer {
+
+    override fun addCorsMappings(registry: CorsRegistry) {
+        registry.addMapping("/api/**")
+            .allowedOrigins(*origensPermitidas.toTypedArray())
+            .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
+            .allowCredentials(true)
+    }
+}

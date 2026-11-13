@@ -1,0 +1,24 @@
+# Configurações comuns a todos os perfis.
+# Perfis: dev (padrão, H2 em arquivo), test (H2 em memória), prod (PostgreSQL).
+spring:
+  application:
+    name: gerenciador
+  profiles:
+    default: dev
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate          # o schema é criado só pelo Flyway; o Hibernate apenas confere
+    properties:
+      hibernate:
+        default_batch_fetch_size: 50
+  flyway:
+    locations: classpath:db/migration
+
+server:
+  port: 8080
+
+app:
+  fuso-horario: America/Fortaleza   # define o "hoje" das regras de prazo, atraso e suspensão
+  cors:
+    origens-permitidas: http://localhost:5173,http://localhost:3000

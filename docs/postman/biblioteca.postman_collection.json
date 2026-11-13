@@ -1,0 +1,866 @@
+{
+  "info": {
+    "name": "Biblioteca Comunitária – API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Contrato da API do backend (docs/objetivo.md, seção 10).\n\nVariável `baseUrl` padrão: http://localhost:8080/api/v1\n\nErros seguem o formato padrão:\n```json\n{ \"status\": 409, \"code\": \"GENRE_ALREADY_EXISTS\", \"message\": \"...\", \"fields\": [], \"timestamp\": \"2026-11-13T12:00:00Z\", \"path\": \"/api/v1/genres\" }\n```\n\nCódigos HTTP: 400 entrada inválida (VALIDATION_ERROR, INVALID_BODY, INVALID_PARAMETER, INVALID_SORT), 404 não encontrado, 409 conflito (inclui CONCURRENT_UPDATE), 422 regra de negócio (ex.: BOOK_HAS_ACTIVE_LOANS, INVALID_STATUS_TRANSITION)."
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080/api/v1"
+    },
+    {
+      "key": "generoId",
+      "value": "1"
+    },
+    {
+      "key": "livroId",
+      "value": "1"
+    },
+    {
+      "key": "exemplarId",
+      "value": "1"
+    },
+    {
+      "key": "leitorId",
+      "value": "2"
+    },
+    {
+      "key": "emprestimoId",
+      "value": "1"
+    },
+    {
+      "key": "itemId",
+      "value": "1"
+    }
+  ],
+  "item": [
+    {
+      "name": "Gêneros",
+      "item": [
+        {
+          "name": "Listar gêneros",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/genres",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "genres"
+              ]
+            },
+            "description": "Lista todos os gêneros em ordem alfabética (sem paginação).\n\n200: `[{ \"id\": 1, \"nome\": \"Romance\" }]`"
+          }
+        },
+        {
+          "name": "Cadastrar gênero",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/genres",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "genres"
+              ]
+            },
+            "description": "201 + header Location. Corpo: `{ \"id\": 1, \"nome\": \"Romance\" }`\n\nErros: 400 VALIDATION_ERROR (nome vazio ou > 100), 409 GENRE_ALREADY_EXISTS (nome repetido, ignora maiúsculas).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Romance\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Renomear gênero",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/genres/{{generoId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "genres",
+                "{{generoId}}"
+              ]
+            },
+            "description": "200 com o gênero atualizado.\n\nErros: 400 VALIDATION_ERROR, 404 GENRE_NOT_FOUND, 409 GENRE_ALREADY_EXISTS.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Romance Histórico\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Livros",
+      "item": [
+        {
+          "name": "Pesquisar livros",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/books?titulo=casmurro&autor=machado&isbn=&generoId={{generoId}}&disponibilidade=DISPONIVEL&page=0&size=20&sort=titulo,asc",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books"
+              ],
+              "query": [
+                {
+                  "key": "titulo",
+                  "value": "casmurro",
+                  "disabled": false
+                },
+                {
+                  "key": "autor",
+                  "value": "machado",
+                  "disabled": true
+                },
+                {
+                  "key": "isbn",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "generoId",
+                  "value": "{{generoId}}",
+                  "disabled": true
+                },
+                {
+                  "key": "disponibilidade",
+                  "value": "DISPONIVEL",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "0",
+                  "disabled": false
+                },
+                {
+                  "key": "size",
+                  "value": "20",
+                  "disabled": false
+                },
+                {
+                  "key": "sort",
+                  "value": "titulo,asc",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": "Lista paginada de livros ativos (RF04). Todos os filtros são opcionais e combináveis.\n\n- `titulo`, `autor`: busca por trecho, sem diferenciar maiúsculas\n- `isbn`: exato\n- `generoId`\n- `disponibilidade`: `DISPONIVEL` (tem exemplar disponível), `INDISPONIVEL` (nenhum disponível), `EMPRESTADO` (tem exemplar emprestado)\n\nOrdenação permitida: titulo, autor, anoPublicacao, dataCadastro (padrão: titulo).\n\n200:\n```json\n{ \"content\": [{ \"id\": 1, \"isbn\": \"978-85-359-0277-1\", \"titulo\": \"Dom Casmurro\", \"autor\": \"Machado de Assis\", \"editora\": \"Penguin\", \"anoPublicacao\": 1899, \"generos\": [{ \"id\": 1, \"nome\": \"Romance\" }], \"totalExemplares\": 3, \"exemplaresDisponiveis\": 2, \"exemplaresEmprestados\": 1, \"cadastradoPor\": \"Administrador\", \"dataCadastro\": \"2026-11-13T12:00:00Z\", \"dataAtualizacao\": \"2026-11-13T12:00:00Z\" }], \"page\": 0, \"size\": 20, \"totalElements\": 1, \"totalPages\": 1 }\n```\n`totalExemplares` não conta os exemplares baixados.\n\nErros: 400 INVALID_SORT, 400 INVALID_PARAMETER (ex.: disponibilidade inválida)."
+          }
+        },
+        {
+          "name": "Buscar livro",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/books/{{livroId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books",
+                "{{livroId}}"
+              ]
+            },
+            "description": "200:\n```json\n{ \"id\": 1, \"isbn\": \"978-85-359-0277-1\", \"titulo\": \"Dom Casmurro\", \"autor\": \"Machado de Assis\", \"editora\": \"Penguin\", \"anoPublicacao\": 1899, \"generos\": [{ \"id\": 1, \"nome\": \"Romance\" }], \"totalExemplares\": 3, \"exemplaresDisponiveis\": 2, \"exemplaresEmprestados\": 1, \"cadastradoPor\": \"Administrador\", \"dataCadastro\": \"2026-11-13T12:00:00Z\", \"dataAtualizacao\": \"2026-11-13T12:00:00Z\" }\n```\nErros: 404 BOOK_NOT_FOUND (inexistente ou inativado)."
+          }
+        },
+        {
+          "name": "Cadastrar livro",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/books",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books"
+              ]
+            },
+            "description": "Obrigatórios: titulo, autor, generoIds (ao menos 1). Opcionais: isbn (único), editora, anoPublicacao.\n\n201 + Location, corpo igual ao de 'Buscar livro' (sem exemplares: contagens zeradas).\n\nErros: 400 VALIDATION_ERROR (fields indica o campo), 404 GENRE_NOT_FOUND, 409 ISBN_ALREADY_EXISTS.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"titulo\": \"Dom Casmurro\",\n  \"autor\": \"Machado de Assis\",\n  \"isbn\": \"978-85-359-0277-1\",\n  \"editora\": \"Penguin\",\n  \"anoPublicacao\": 1899,\n  \"generoIds\": [\n    1\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Atualizar livro",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/books/{{livroId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books",
+                "{{livroId}}"
+              ]
+            },
+            "description": "Substitui todos os dados (mesmas regras do cadastro). 200 com o livro atualizado.\n\nErros: 400, 404 BOOK_NOT_FOUND / GENRE_NOT_FOUND, 409 ISBN_ALREADY_EXISTS.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"titulo\": \"Dom Casmurro\",\n  \"autor\": \"Machado de Assis\",\n  \"isbn\": \"978-85-359-0277-1\",\n  \"editora\": \"Companhia das Letras\",\n  \"anoPublicacao\": 1899,\n  \"generoIds\": [\n    1\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Inativar livro",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/books/{{livroId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books",
+                "{{livroId}}"
+              ]
+            },
+            "description": "Exclusão lógica (RN12). 204 sem corpo. O livro deixa de aparecer nas consultas.\n\nErros: 404 BOOK_NOT_FOUND, 422 BOOK_HAS_ACTIVE_LOANS (há exemplar emprestado, RN13)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Exemplares",
+      "item": [
+        {
+          "name": "Listar exemplares do livro",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/books/{{livroId}}/copies",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books",
+                "{{livroId}}",
+                "copies"
+              ]
+            },
+            "description": "Todos os exemplares do livro (inclusive baixados), ordenados por código.\n\n200: `[{ \"id\": 1, \"codigo\": \"LIV000001-EX01\", \"livroId\": 1, \"condicao\": \"NOVO\", \"status\": \"DISPONIVEL\", \"dataCadastro\": \"2026-11-13T12:00:00Z\", \"dataAtualizacao\": \"2026-11-13T12:00:00Z\" }]`\n\nErros: 404 BOOK_NOT_FOUND."
+          }
+        },
+        {
+          "name": "Adicionar exemplares",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/books/{{livroId}}/copies",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "books",
+                "{{livroId}}",
+                "copies"
+              ]
+            },
+            "description": "Cria `quantidade` exemplares (1 a 50, padrão 1) com código gerado em sequência: `LIV000001-EX01`, `LIV000001-EX02`... (RN15).\n\n`condicao` (padrão NOVO): NOVO, EXCELENTE, CONSERVADO, ACEITAVEL, MAL_CONSERVADO, DANIFICADO. Exemplar cadastrado como DANIFICADO já entra em MANUTENCAO.\n\n201 com a lista de exemplares criados.\n\nErros: 400 VALIDATION_ERROR (quantidade), 400 INVALID_BODY (condição inexistente), 404 BOOK_NOT_FOUND.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quantidade\": 3,\n  \"condicao\": \"NOVO\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Buscar exemplar",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/copies/{{exemplarId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "copies",
+                "{{exemplarId}}"
+              ]
+            },
+            "description": "200: `{ \"id\": 1, \"codigo\": \"LIV000001-EX01\", \"livroId\": 1, \"condicao\": \"NOVO\", \"status\": \"DISPONIVEL\", \"dataCadastro\": \"2026-11-13T12:00:00Z\", \"dataAtualizacao\": \"2026-11-13T12:00:00Z\" }`\n\nErros: 404 COPY_NOT_FOUND."
+          }
+        },
+        {
+          "name": "Alterar exemplar",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/copies/{{exemplarId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "copies",
+                "{{exemplarId}}"
+              ]
+            },
+            "description": "Altera só os campos enviados: `codigo`, `condicao`, `status`.\n\nTransições de status permitidas manualmente:\n- DISPONIVEL → MANUTENCAO, BAIXADO\n- MANUTENCAO → DISPONIVEL, BAIXADO\n- BAIXADO → (nenhuma; não volta a circular, RN16)\n\nEMPRESTADO só muda pelo fluxo de empréstimo/devolução.\n\n200 com o exemplar atualizado.\n\nErros: 404 COPY_NOT_FOUND, 409 COPY_CODE_ALREADY_EXISTS, 422 INVALID_STATUS_TRANSITION, 422 COPY_ON_LOAN (exemplar emprestado não pode ser alterado), 422 DAMAGED_COPY_UNAVAILABLE (danificado não pode ficar DISPONIVEL).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"condicao\": \"MAL_CONSERVADO\",\n  \"status\": \"MANUTENCAO\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Leitores",
+      "item": [
+        {
+          "name": "Pesquisar leitores",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/readers?busca=maria&page=0&size=20&sort=nome,asc",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "readers"
+              ],
+              "query": [
+                {
+                  "key": "busca",
+                  "value": "maria",
+                  "disabled": false
+                },
+                {
+                  "key": "page",
+                  "value": "0",
+                  "disabled": false
+                },
+                {
+                  "key": "size",
+                  "value": "20",
+                  "disabled": false
+                },
+                {
+                  "key": "sort",
+                  "value": "nome,asc",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": "Lista paginada de leitores ativos. `busca` (opcional) procura por trecho do nome, do e-mail ou do documento (aceita formatado, ex.: `529.982`).\n\nOrdenação permitida: nome, dataCadastro (padrão: nome).\n\n200: `{ \"content\": [{ \"id\": 2, \"nome\": \"Maria da Silva\", \"tipoDocumento\": \"CPF\", \"documento\": \"52998224725\", \"email\": \"maria@email.com\", \"telefone\": \"(88) 99999-0000\", \"endereco\": \"Rua A, 10 - Quixadá\", \"acessoHabilitado\": false, \"suspensoAte\": null, \"suspenso\": false, \"dataCadastro\": \"2026-11-13T12:00:00Z\", \"dataAtualizacao\": \"2026-11-13T12:00:00Z\" }], \"page\": 0, \"size\": 20, \"totalElements\": 1, \"totalPages\": 1 }`"
+          }
+        },
+        {
+          "name": "Buscar leitor",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/readers/{{leitorId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "readers",
+                "{{leitorId}}"
+              ]
+            },
+            "description": "200: `{ \"id\": 2, \"nome\": \"Maria da Silva\", \"tipoDocumento\": \"CPF\", \"documento\": \"52998224725\", \"email\": \"maria@email.com\", \"telefone\": \"(88) 99999-0000\", \"endereco\": \"Rua A, 10 - Quixadá\", \"acessoHabilitado\": false, \"suspensoAte\": null, \"suspenso\": false, \"dataCadastro\": \"2026-11-13T12:00:00Z\", \"dataAtualizacao\": \"2026-11-13T12:00:00Z\" }`\n\nErros: 404 READER_NOT_FOUND (inexistente, inativo ou não é leitor)."
+          }
+        },
+        {
+          "name": "Cadastrar leitor",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/readers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "readers"
+              ]
+            },
+            "description": "Obrigatórios: nome, documento. `tipoDocumento`: CPF (padrão) ou RG. O documento pode vir com ou sem pontuação; é gravado normalizado (CPF só dígitos). CPF tem os dígitos verificadores conferidos. Opcionais: email (único, gravado em minúsculas), telefone, endereco.\n\n201 + Location, corpo igual ao de 'Buscar leitor'.\n\nErros: 400 VALIDATION_ERROR (ex.: `{ \"field\": \"documento\", \"message\": \"CPF inválido\" }`), 409 DOCUMENT_ALREADY_EXISTS, 409 EMAIL_ALREADY_EXISTS.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Maria da Silva\",\n  \"tipoDocumento\": \"CPF\",\n  \"documento\": \"529.982.247-25\",\n  \"email\": \"maria@email.com\",\n  \"telefone\": \"(88) 99999-0000\",\n  \"endereco\": \"Rua A, 10 - Quixadá\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Atualizar leitor",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/readers/{{leitorId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "readers",
+                "{{leitorId}}"
+              ]
+            },
+            "description": "Substitui todos os dados (mesmas regras do cadastro). 200 com o leitor atualizado.\n\nErros: 400, 404 READER_NOT_FOUND, 409 DOCUMENT_ALREADY_EXISTS / EMAIL_ALREADY_EXISTS, 422 EMAIL_REQUIRED_FOR_ACCESS (leitor com acesso não pode ficar sem e-mail).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Maria da Silva\",\n  \"tipoDocumento\": \"CPF\",\n  \"documento\": \"529.982.247-25\",\n  \"email\": \"maria@email.com\",\n  \"telefone\": \"(88) 99999-0000\",\n  \"endereco\": \"Rua A, 10 - Quixadá\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Habilitar acesso do leitor",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/readers/{{leitorId}}/access",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "readers",
+                "{{leitorId}}",
+                "access"
+              ]
+            },
+            "description": "Habilita (ou redefine) o login do leitor (RF08). O login usa o e-mail, então o leitor precisa ter e-mail. Senha de 8 a 72 caracteres, guardada só como hash BCrypt.\n\n200 com o leitor (`acessoHabilitado: true`).\n\nErros: 400 VALIDATION_ERROR (senha), 404 READER_NOT_FOUND, 422 EMAIL_REQUIRED_FOR_ACCESS.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"senha\": \"senhaForte123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Inativar leitor",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/readers/{{leitorId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "readers",
+                "{{leitorId}}"
+              ]
+            },
+            "description": "Exclusão lógica (RN12). 204 sem corpo.\n\nErros: 404 READER_NOT_FOUND, 422 READER_HAS_ACTIVE_LOANS (leitor com exemplar não devolvido, RN13)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Empréstimos",
+      "item": [
+        {
+          "name": "Pesquisar empréstimos",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/loans?situacao=ATRASADO&leitorId={{leitorId}}&livroId={{livroId}}&page=0&size=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "loans"
+              ],
+              "query": [
+                {
+                  "key": "situacao",
+                  "value": "ATRASADO",
+                  "disabled": false
+                },
+                {
+                  "key": "leitorId",
+                  "value": "{{leitorId}}",
+                  "disabled": true
+                },
+                {
+                  "key": "livroId",
+                  "value": "{{livroId}}",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "0",
+                  "disabled": false
+                },
+                {
+                  "key": "size",
+                  "value": "20",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": "Empréstimos em aberto, atrasados e devolvidos (RF12). Filtros opcionais: `situacao` (ATIVO, ATRASADO, DEVOLVIDO), `leitorId`, `livroId`. Ordenação: dataEmprestimo (padrão: mais recentes primeiro).\n\n`status` (gravado): ABERTO | ENCERRADO. `situacao` (calculada, RN06): ATIVO (no prazo), ATRASADO (algum item passou da data prevista; no dia previsto ainda não está atrasado), DEVOLVIDO.\n\n200: página (`content`, `page`, `size`, `totalElements`, `totalPages`) de:\n```json\n{\n  \"id\": 1,\n  \"leitor\": { \"id\": 2, \"nome\": \"Ana Souza\" },\n  \"operador\": { \"id\": 1, \"nome\": \"Administrador\" },\n  \"dataEmprestimo\": \"2026-11-13T12:00:00Z\",\n  \"status\": \"ABERTO\",\n  \"situacao\": \"ATIVO\",\n  \"observacao\": null,\n  \"itens\": [{\n    \"id\": 1, \"exemplarId\": 1, \"codigoExemplar\": \"LIV000001-EX01\", \"livroId\": 1, \"tituloLivro\": \"Dom Casmurro\",\n    \"dataDevolucaoPrevista\": \"2026-11-27\", \"dataDevolucaoReal\": null,\n    \"situacao\": \"ATIVO\", \"diasAtraso\": 0, \"renovacoes\": 0, \"renovacoesRestantes\": 2,\n    \"condicaoRetirada\": \"CONSERVADO\", \"condicaoDevolucao\": null\n  }]\n}\n```\nErros: 400 INVALID_PARAMETER (situação inválida)."
+          }
+        },
+        {
+          "name": "Buscar empréstimo",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/loans/{{emprestimoId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "loans",
+                "{{emprestimoId}}"
+              ]
+            },
+            "description": "200:\n```json\n{\n  \"id\": 1,\n  \"leitor\": { \"id\": 2, \"nome\": \"Ana Souza\" },\n  \"operador\": { \"id\": 1, \"nome\": \"Administrador\" },\n  \"dataEmprestimo\": \"2026-11-13T12:00:00Z\",\n  \"status\": \"ABERTO\",\n  \"situacao\": \"ATIVO\",\n  \"observacao\": null,\n  \"itens\": [{\n    \"id\": 1, \"exemplarId\": 1, \"codigoExemplar\": \"LIV000001-EX01\", \"livroId\": 1, \"tituloLivro\": \"Dom Casmurro\",\n    \"dataDevolucaoPrevista\": \"2026-11-27\", \"dataDevolucaoReal\": null,\n    \"situacao\": \"ATIVO\", \"diasAtraso\": 0, \"renovacoes\": 0, \"renovacoesRestantes\": 2,\n    \"condicaoRetirada\": \"CONSERVADO\", \"condicaoDevolucao\": null\n  }]\n}\n```\nErros: 404 LOAN_NOT_FOUND."
+          }
+        },
+        {
+          "name": "Registrar empréstimo",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/loans",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "loans"
+              ]
+            },
+            "description": "RF09. Obrigatórios: `leitorId`, `exemplarIds` (1 a 10). Opcionais: `prazoDias` (padrão 14, máximo 30, configuráveis), `observacao`. O operador é o usuário logado.\n\nRegras (422):\n- READER_SUSPENDED: leitor suspenso por atraso (RN05)\n- READER_HAS_OVERDUE_LOANS: leitor tem item atrasado (RN05)\n- LOAN_LIMIT_EXCEEDED: passaria de 3 exemplares com o leitor (RN01)\n- SAME_BOOK_TWICE: dois exemplares do mesmo livro, nesta requisição ou com o que já está com o leitor (RN04)\n- COPY_NOT_AVAILABLE: exemplar não está DISPONIVEL ou o livro foi inativado (RN03)\n- LOAN_TERM_EXCEEDED: prazoDias acima do máximo (RN02)\n\nSe qualquer regra falhar, nada é gravado.\n\n201 + Location, corpo igual ao de 'Buscar empréstimo'.\n\nOutros erros: 400 VALIDATION_ERROR, 404 READER_NOT_FOUND / COPY_NOT_FOUND, 409 CONCURRENT_UPDATE (o mesmo exemplar foi emprestado em outro balcão no mesmo instante).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"leitorId\": 2,\n  \"exemplarIds\": [\n    1,\n    5\n  ],\n  \"prazoDias\": 14,\n  \"observacao\": \"Opcional\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Registrar devolução",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/loans/{{emprestimoId}}/return",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "loans",
+                "{{emprestimoId}}",
+                "return"
+              ]
+            },
+            "description": "RF10. Devolve um ou mais itens do empréstimo (`itemId` vem de `itens[].id`), informando a condição de cada exemplar.\n\n- Condição DANIFICADO: o exemplar vai para MANUTENCAO; senão volta a DISPONIVEL (RN08)\n- Devolução parcial é permitida; quando todos os itens voltam, o empréstimo fica ENCERRADO (RN09)\n- Com atraso, o leitor é suspenso por (maior atraso entre os itens devolvidos x fator configurado) dias, contando hoje (RN07)\n\n200 com o empréstimo atualizado.\n\nErros: 400 VALIDATION_ERROR (ex.: `itens[0].condicao`), 404 LOAN_NOT_FOUND / LOAN_ITEM_NOT_FOUND, 422 ITEM_ALREADY_RETURNED.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"itens\": [\n    {\n      \"itemId\": 1,\n      \"condicao\": \"CONSERVADO\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Renovar item",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/loans/items/{{itemId}}/renew",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "loans",
+                "items",
+                "{{itemId}}",
+                "renew"
+              ]
+            },
+            "description": "RF11. Nova data prevista = hoje + prazo padrão (nunca antes da data atual). Máximo de 2 renovações por item (`renovacoesRestantes` no response).\n\n200 com o empréstimo completo atualizado.\n\nErros: 404 LOAN_ITEM_NOT_FOUND, 422 OVERDUE_ITEM_CANNOT_BE_RENEWED (RN11), RENEWAL_LIMIT_REACHED (RN10), READER_SUSPENDED / READER_HAS_OVERDUE_LOANS (RN05), ITEM_ALREADY_RETURNED."
+          }
+        },
+        {
+          "name": "Histórico do leitor",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/readers/{{leitorId}}/loans?situacao=&page=0&size=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "readers",
+                "{{leitorId}}",
+                "loans"
+              ],
+              "query": [
+                {
+                  "key": "situacao",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "0",
+                  "disabled": false
+                },
+                {
+                  "key": "size",
+                  "value": "20",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": "RF07. Todos os empréstimos do leitor (mais recentes primeiro), com filtro opcional de `situacao`. Mesmo formato de 'Pesquisar empréstimos'.\n\nErros: 404 READER_NOT_FOUND."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Configurações",
+      "item": [
+        {
+          "name": "Listar configurações",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/settings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "settings"
+              ]
+            },
+            "description": "Parâmetros de negócio (RF19), em ordem de chave.\n\n200:\n```json\n[{ \"chave\": \"emprestimo.max_itens_por_leitor\", \"valor\": 3, \"descricao\": \"Máximo de exemplares emprestados ao mesmo tempo por leitor (RN01)\" }]\n```\nChaves: emprestimo.max_itens_por_leitor (3), emprestimo.prazo_padrao_dias (14), emprestimo.prazo_maximo_dias (30), emprestimo.max_renovacoes (2), suspensao.dias_por_dia_atraso (1), login.* e jwt.* (usadas na fase de segurança)."
+          }
+        },
+        {
+          "name": "Alterar configuração",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/settings/emprestimo.max_itens_por_leitor",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "settings",
+                "emprestimo.max_itens_por_leitor"
+              ]
+            },
+            "description": "Altera o valor (inteiro de 1 a 10000). Vale imediatamente para as próximas operações.\n\n200 com a configuração.\n\nErros: 400 VALIDATION_ERROR, 404 SETTING_NOT_FOUND.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"valor\": 5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Catálogo público",
+      "item": [
+        {
+          "name": "Catálogo público",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/catalog/books?titulo=&autor=&generoId={{generoId}}&apenasDisponiveis=true&page=0&size=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "catalog",
+                "books"
+              ],
+              "query": [
+                {
+                  "key": "titulo",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "autor",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "generoId",
+                  "value": "{{generoId}}",
+                  "disabled": true
+                },
+                {
+                  "key": "apenasDisponiveis",
+                  "value": "true",
+                  "disabled": false
+                },
+                {
+                  "key": "page",
+                  "value": "0",
+                  "disabled": false
+                },
+                {
+                  "key": "size",
+                  "value": "20",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": "Consulta pública para visitantes (RF05): não exige login (também após a fase de segurança).\n\n200:\n```json\n{ \"content\": [{ \"id\": 1, \"titulo\": \"Dom Casmurro\", \"autor\": \"Machado de Assis\", \"editora\": \"Penguin\", \"anoPublicacao\": 1899, \"generos\": [\"Romance\"], \"exemplaresDisponiveis\": 2, \"disponivel\": true }], \"page\": 0, \"size\": 20, \"totalElements\": 1, \"totalPages\": 1 }\n```"
+          }
+        }
+      ]
+    }
+  ]
+}
