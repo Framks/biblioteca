@@ -15,8 +15,7 @@ INSERT INTO configuracao (chave, valor, descricao) VALUES
     ('login.max_tentativas',            '5',   'Tentativas de login erradas antes do bloqueio (seção 6.1)'),
     ('login.bloqueio_minutos',          '15',  'Duração do bloqueio de login, em minutos (seção 6.1)'),
     ('jwt.access_minutos',              '15',  'Validade do access token, em minutos (seção 6.2)'),
-    ('jwt.refresh_dias',                '7',   'Validade do refresh token, em dias (seção 6.2)'),
-    ('sessao.viagem_impossivel_km_h',   '500', 'Velocidade acima da qual a mudança de local revoga a sessão (seção 6.5)');
+    ('jwt.refresh_dias',                '7',   'Validade do refresh token, em dias (seção 6.2)');
 
 -- Controle de concorrência otimista: impede dois empréstimos simultâneos do mesmo exemplar.
 ALTER TABLE exemplar ADD COLUMN versao BIGINT DEFAULT 0 NOT NULL;
