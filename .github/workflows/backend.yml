@@ -1,0 +1,55 @@
+name: backend
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+
+jobs:
+  testes:
+    # Os testes rodam em H2 (como na máquina de cada um) e em PostgreSQL (como em produção):
+    # já houve consulta que passava no H2 e quebrava no PostgreSQL.
+    name: backend (${{ matrix.banco }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        banco: [h2, postgres]
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: biblioteca
+          POSTGRES_USER: biblioteca
+          POSTGRES_PASSWORD: biblioteca
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U biblioteca -d biblioteca"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    defaults:
+      run:
+        working-directory: backend_biblioteca
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Testes de componente
+        env:
+          BANCO: ${{ matrix.banco }}
+        run: |
+          if [ "$BANCO" = "postgres" ]; then
+            export SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/biblioteca
+            export SPRING_DATASOURCE_USERNAME=biblioteca
+            export SPRING_DATASOURCE_PASSWORD=biblioteca
+          fi
+          ./gradlew test --no-daemon
+      - name: Relatório dos testes
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: relatorio-testes-${{ matrix.banco }}
+          path: backend_biblioteca/build/reports/tests/test

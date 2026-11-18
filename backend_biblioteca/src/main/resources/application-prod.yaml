@@ -1,0 +1,13 @@
+# Produção: PostgreSQL. Credenciais via variáveis de ambiente.
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/biblioteca}
+    username: ${DB_USER:biblioteca}
+    password: ${DB_PASSWORD:biblioteca}
+
+app:
+  seguranca:
+    jwt-segredo: ${JWT_SEGREDO}          # obrigatório (a aplicação não sobe sem ele)
+    cookie-seguro: ${COOKIE_SEGURO:true}
+  cors:
+    origens-permitidas: ${CORS_ORIGENS:http://localhost:5173}
