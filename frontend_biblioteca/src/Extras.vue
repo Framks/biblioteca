@@ -1,9 +1,12 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { request, send } from './api'
 const props = defineProps({kind:String, data:Object})
 const emit = defineEmits(['close','changed'])
 const error = ref(''), rows = ref([]), roles = ref([]), permissions = ref([]), selectedRole = ref(null), form = ref({}), report = ref('loans-per-month'), reportFilter = ref({}), reportRows = ref([]), historyPage = ref(0), historyPages = ref(0)
+const appliedReport = ref(null)
+const reportLoading = ref(false)
+let reportRequest
 const labels = {genres:'Gêneros literários',history:'Histórico de empréstimos',access:'Habilitar acesso',copy:'Editar exemplar',user:'Editar usuário',userSessions:'Sessões do usuário',roles:'Perfis e permissões',reports:'Relatórios detalhados'}
 const condition = ['NOVO','EXCELENTE','CONSERVADO','ACEITAVEL','MAL_CONSERVADO','DANIFICADO']
 const statuses = ['DISPONIVEL','MANUTENCAO','BAIXADO']
@@ -19,8 +22,39 @@ async function load() { await run(async () => {
  if (props.kind === 'user') form.value = {nome:props.data.nome,email:props.data.email,telefone:props.data.telefone,perfil:props.data.perfil}
 }) }
 function selectRole(role) { selectedRole.value = role; form.value = {permissoes:[...(role?.permissoes || [])]} }
-function params() { const p = new URLSearchParams(); for (const [key,val] of Object.entries(reportFilter.value)) if (val) p.set(key,val); return p.toString() }
-async function loadReport() { reportRows.value = await request(`/reports/${report.value}?${params()}`) }
+const reportQuery = computed(() => {
+  const params = new URLSearchParams()
+  for (const [key, value] of Object.entries(reportFilter.value)) {
+    if (value) params.set(key, value)
+  }
+  return params.toString()
+})
+const filtersChanged = computed(() => appliedReport.value && reportQuery.value !== appliedReport.value.query)
+
+async function loadReport() {
+  reportRequest?.abort()
+  reportRequest = new AbortController()
+  const { signal } = reportRequest
+  const selection = { type: report.value, query: reportQuery.value }
+  reportLoading.value = true
+  try {
+    const result = await request(`/reports/${selection.type}?${selection.query}`, { signal })
+    if (signal.aborted) return
+    reportRows.value = result
+    appliedReport.value = selection
+  } catch (e) {
+    if (!signal.aborted) throw e
+  } finally {
+    if (!signal.aborted) reportLoading.value = false
+  }
+}
+
+function changeReport() {
+  reportFilter.value = {}
+  reportRows.value = []
+  appliedReport.value = null
+  return run(loadReport)
+}
 async function save() { await run(async () => {
  if (props.kind === 'genres') { await send(form.value.id ? `/genres/${form.value.id}` : '/genres',form.value.id ? 'PUT':'POST',{nome:form.value.nome}); form.value = {}; rows.value = await request('/genres') }
  if (props.kind === 'access') { await send(`/readers/${props.data.id}/access`,'POST',{senha:form.value.senha}); emit('close') }
@@ -30,8 +64,21 @@ async function save() { await run(async () => {
  emit('changed')
 }) }
 async function revoke(id) { await run(async () => { await send(`/auth/sessions/${id}`,'DELETE'); rows.value = await request(`/users/${props.data.id}/sessions`); emit('changed') }) }
-async function download() { await run(async () => { const blob = await request(`/reports/${report.value}/export?${params()}`,{raw:true}); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `${report.value}.csv`; a.click(); URL.revokeObjectURL(url) }) }
+async function download() {
+  if (!appliedReport.value || reportLoading.value) return
+  const { type, query } = appliedReport.value
+  await run(async () => {
+    const blob = await request(`/reports/${type}/export?${query}`, { raw: true })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${type}.csv`
+    link.click()
+    URL.revokeObjectURL(url)
+  })
+}
 onMounted(load)
+onUnmounted(() => reportRequest?.abort())
 </script>
 <template>
  <div class="modal-backdrop extras-backdrop" @click.self="emit('close')"><section class="modal extras-modal" role="dialog" aria-modal="true" :aria-label="labels[kind]"><div class="modal-head"><div><span class="eyebrow">BIBLIOTECA COMUNITÁRIA</span><h2>{{ labels[kind] }}</h2></div><button class="icon-btn" aria-label="Fechar" @click="emit('close')">×</button></div>
@@ -43,6 +90,35 @@ onMounted(load)
  <form v-if="kind === 'user'" class="form-stack" @submit.prevent="save"><label>Nome<input v-model="form.nome" required></label><label>E-mail<input v-model="form.email" type="email" required></label><label>Telefone<input v-model="form.telefone"></label><label>Perfil<select v-model="form.perfil"><option value="FUNCIONARIO">Funcionário</option><option value="ADMIN">Administrador</option></select></label><button class="btn btn-primary">Salvar</button></form>
  <template v-if="kind === 'userSessions'"><p>{{ data.nome }}</p><div v-for="s in rows" :key="s.id" class="extra-item"><strong>{{ s.userAgent }}</strong><p>{{ s.ip }} · {{ s.ultimoAcesso }}</p><button class="text-btn" @click="revoke(s.id)">Encerrar sessão</button></div><p v-if="!rows.length">Nenhuma sessão ativa.</p></template>
  <template v-if="kind === 'roles'"><label>Perfil <select :value="selectedRole?.id" @change="selectRole(roles.find(r => r.id === Number($event.target.value)))"><option v-for="r in roles" :key="r.id" :value="r.id">{{ r.nome }}</option></select></label><form v-if="selectedRole" class="form-stack" @submit.prevent="save"><p v-if="!selectedRole.editavel">Este perfil não pode ser alterado.</p><label v-for="p in permissions" :key="p.codigo" class="inline-check"><input v-model="form.permissoes" type="checkbox" :value="p.codigo" :disabled="!selectedRole.editavel"> {{ p.descricao }} ({{ p.codigo }})</label><button v-if="selectedRole.editavel" class="btn btn-primary">Salvar permissões</button></form></template>
- <template v-if="kind === 'reports'"><form class="form-stack" @submit.prevent="run(loadReport)"><label>Relatório<select v-model="report" @change="reportFilter = {}; run(loadReport)"><option value="loans-per-month">Empréstimos por mês</option><option value="top-books">Livros mais emprestados</option><option value="overdue-readers">Leitores em atraso</option></select></label><div v-if="report === 'loans-per-month'" class="form-grid"><label>De<input v-model="reportFilter.inicio" type="month"></label><label>Até<input v-model="reportFilter.fim" type="month"></label></div><div v-if="report === 'top-books'" class="form-grid"><label>De<input v-model="reportFilter.de" type="date"></label><label>Até<input v-model="reportFilter.ate" type="date"></label><label>Limite<input v-model="reportFilter.limite" type="number" min="1" max="100"></label></div><div><button class="btn btn-primary">Consultar</button> <button type="button" class="btn btn-outline" @click="download">Exportar CSV</button></div></form><div v-for="(row,i) in reportRows" :key="i" class="extra-item"><p v-for="(value,key) in row" :key="key"><strong>{{ key }}:</strong> {{ Array.isArray(value) ? value.join(', ') : value ?? '—' }}</p></div><p v-if="!reportRows.length">Nenhum resultado encontrado.</p></template>
+ <template v-if="kind === 'reports'">
+   <form class="form-stack" @submit.prevent="run(loadReport)">
+     <label>Relatório
+       <select v-model="report" @change="changeReport">
+         <option value="loans-per-month">Empréstimos por mês</option>
+         <option value="top-books">Livros mais emprestados</option>
+         <option value="overdue-readers">Leitores em atraso</option>
+       </select>
+     </label>
+     <div v-if="report === 'loans-per-month'" class="form-grid">
+       <label>De<input v-model="reportFilter.inicio" type="month"></label>
+       <label>Até<input v-model="reportFilter.fim" type="month"></label>
+     </div>
+     <div v-if="report === 'top-books'" class="form-grid">
+       <label>De<input v-model="reportFilter.de" type="date"></label>
+       <label>Até<input v-model="reportFilter.ate" type="date"></label>
+       <label>Limite<input v-model="reportFilter.limite" type="number" min="1" max="100"></label>
+     </div>
+     <p v-if="filtersChanged">Clique em Consultar para aplicar os novos filtros ao relatório e ao CSV.</p>
+     <div>
+       <button class="btn btn-primary" :disabled="reportLoading">Consultar</button>
+       <button type="button" class="btn btn-outline" :disabled="reportLoading || !appliedReport" @click="download">Exportar CSV</button>
+     </div>
+   </form>
+   <p v-if="reportLoading" role="status">Carregando relatório...</p>
+   <div v-for="(row, i) in reportRows" :key="i" class="extra-item">
+     <p v-for="(value, key) in row" :key="key"><strong>{{ key }}:</strong> {{ Array.isArray(value) ? value.join(', ') : value ?? '—' }}</p>
+   </div>
+   <p v-if="appliedReport && !reportRows.length && !reportLoading">Nenhum resultado encontrado.</p>
+ </template>
  </section></div>
 </template>
