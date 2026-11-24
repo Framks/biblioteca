@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { request, send } from './api'
+import { formatDate } from './dates'
 const props = defineProps({kind:String, data:Object})
 const emit = defineEmits(['close','changed'])
 const error = ref(''), rows = ref([]), roles = ref([]), permissions = ref([]), selectedRole = ref(null), form = ref({}), report = ref('loans-per-month'), reportFilter = ref({}), reportRows = ref([]), historyPage = ref(0), historyPages = ref(0)
@@ -84,7 +85,23 @@ onUnmounted(() => reportRequest?.abort())
  <div class="modal-backdrop extras-backdrop" @click.self="emit('close')"><section class="modal extras-modal" role="dialog" aria-modal="true" :aria-label="labels[kind]"><div class="modal-head"><div><span class="eyebrow">BIBLIOTECA COMUNITÁRIA</span><h2>{{ labels[kind] }}</h2></div><button class="icon-btn" aria-label="Fechar" @click="emit('close')">×</button></div>
  <div v-if="error" class="alert" role="alert">{{ error }}</div>
  <template v-if="kind === 'genres'"><ul class="copy-list"><li v-for="g in rows" :key="g.id">{{ g.nome }} <button class="text-btn" @click="form = {...g}">Editar</button></li></ul><form class="form-stack" @submit.prevent="save"><label>Nome do gênero<input v-model="form.nome" required maxlength="100"></label><div><button class="btn btn-primary">{{ form.id ? 'Atualizar' : 'Adicionar' }}</button> <button v-if="form.id" type="button" class="btn btn-ghost" @click="form = {}">Cancelar edição</button></div></form></template>
- <template v-if="kind === 'history'"><p>{{ data.nome }}</p><div v-for="loan in rows" :key="loan.id" class="extra-item"><strong>Empréstimo #{{ loan.id }} · {{ loan.situacao }}</strong><p v-for="item in loan.itens" :key="item.id">{{ item.tituloLivro }} — {{ item.situacao }} — {{ item.dataDevolucaoPrevista }}</p></div><p v-if="!rows.length">Nenhum empréstimo encontrado.</p><div v-if="historyPages > 1" class="pager"><button class="btn btn-outline" :disabled="historyPage === 0" @click="run(() => loadHistory(historyPage-1))">Anterior</button>{{ historyPage + 1 }} / {{ historyPages }}<button class="btn btn-outline" :disabled="historyPage + 1 >= historyPages" @click="run(() => loadHistory(historyPage+1))">Próxima</button></div></template>
+ <template v-if="kind === 'history'">
+   <p>{{ data.nome }}</p>
+   <div v-for="loan in rows" :key="loan.id" class="extra-item">
+     <strong>Empréstimo #{{ loan.id }} · {{ loan.situacao }}</strong>
+     <p>Data do empréstimo <time :datetime="loan.dataEmprestimo">{{ formatDate(loan.dataEmprestimo) }}</time></p>
+     <p v-for="item in loan.itens" :key="item.id">
+       {{ item.tituloLivro }} · {{ item.situacao }} · Devolução prevista em
+       <time :datetime="item.dataDevolucaoPrevista">{{ formatDate(item.dataDevolucaoPrevista) }}</time>
+     </p>
+   </div>
+   <p v-if="!rows.length">Nenhum empréstimo encontrado.</p>
+   <div v-if="historyPages > 1" class="pager">
+     <button class="btn btn-outline" :disabled="historyPage === 0" @click="run(() => loadHistory(historyPage - 1))">Anterior</button>
+     {{ historyPage + 1 }} / {{ historyPages }}
+     <button class="btn btn-outline" :disabled="historyPage + 1 >= historyPages" @click="run(() => loadHistory(historyPage + 1))">Próxima</button>
+   </div>
+ </template>
  <form v-if="kind === 'access'" class="form-stack" @submit.prevent="save"><p>Defina uma senha para {{ data.nome }}.</p><label>Senha<input v-model="form.senha" type="password" minlength="8" maxlength="72" required></label><button class="btn btn-primary">Salvar acesso</button></form>
  <form v-if="kind === 'copy'" class="form-stack" @submit.prevent="save"><label>Código<input v-model="form.codigo" required maxlength="30"></label><label>Condição<select v-model="form.condicao"><option v-for="c in condition" :key="c">{{ c }}</option></select></label><label>Status<select v-model="form.status" :disabled="data.status === 'EMPRESTADO' || data.status === 'BAIXADO'"><option v-if="data.status === 'EMPRESTADO'">EMPRESTADO</option><option v-for="s in statuses" :key="s">{{ s }}</option></select></label><button class="btn btn-primary">Salvar</button></form>
  <form v-if="kind === 'user'" class="form-stack" @submit.prevent="save"><label>Nome<input v-model="form.nome" required></label><label>E-mail<input v-model="form.email" type="email" required></label><label>Telefone<input v-model="form.telefone"></label><label>Perfil<select v-model="form.perfil"><option value="FUNCIONARIO">Funcionário</option><option value="ADMIN">Administrador</option></select></label><button class="btn btn-primary">Salvar</button></form>

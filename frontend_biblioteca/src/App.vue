@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { request, send, setToken, restoreSession } from './api'
+import { formatDate as date } from './dates'
 import Extras from './Extras.vue'
 import LoanForm from './LoanForm.vue'
 
@@ -10,6 +11,10 @@ const books = ref([]), readers = ref([]), loans = ref([]), genres = ref([]), cop
 const loanStatus = ref('')
 const extra = ref(''), extraData = ref(null), filters = ref({ field:'titulo', genre:'', status:'' })
 const form = ref({}), credentials = ref({ email: '', senha: '' }), pagination = ref({page: 0, totalPages: 0})
+const savingForm = ref(false)
+const addingCopies = ref(false)
+const copyQuantity = ref(1)
+const maxCopiesPerBatch = 50
 const colors = ['#c85d3b','#d59a32','#536b59','#9b7048','#576b82','#7c5a76']
 const nav = [
   {id:'catalogo', label:'Catálogo', icon:'▦'}, {id:'meus', label:'Meus empréstimos', icon:'◷', permission:'loan_read_own'},
@@ -22,7 +27,6 @@ const visibleNav = computed(() => nav.filter(n => !n.permission || user.value?.p
 const title = computed(() => nav.find(n => n.id === page.value)?.label || 'Catálogo')
 const can = permission => user.value?.permissoes?.includes(permission)
 const items = value => Array.isArray(value) ? value : value?.content || []
-const date = value => value ? new Intl.DateTimeFormat('pt-BR', {timeZone:'America/Fortaleza'}).format(new Date(value.length === 10 ? `${value}T12:00:00` : value)) : '—'
 const genreNames = book => (book.generos || []).map(g => typeof g === 'string' ? g : g.nome)
 function showError(e) { error.value = e.message || 'Não foi possível conectar ao servidor.' }
 function notify(message) { notice.value = message; setTimeout(() => { notice.value = '' }, 3500) }
@@ -95,11 +99,38 @@ function openUserSessions(member) {
     extra.value = 'userSessions'
   }
 }
-async function openBook(book) { selected.value = book; copies.value = []; modal.value = 'book'; if (can('copy_read')) try { copies.value = items(await request(`/books/${book.id}/copies`)) } catch(e) { showError(e) } }
+async function openBook(book) {
+  selected.value = book
+  copies.value = []
+  copyQuantity.value = 1
+  modal.value = 'book'
+  if (!can('copy_read')) return
+
+  try {
+    const bookCopies = await request(`/books/${book.id}/copies`)
+    if (modal.value !== 'book' || selected.value?.id !== book.id) return
+    copies.value = bookCopies
+    selected.value = {
+      ...book,
+      exemplaresDisponiveis: bookCopies.filter(copy => copy.status === 'DISPONIVEL').length,
+    }
+  } catch (e) {
+    if (modal.value === 'book' && selected.value?.id === book.id) showError(e)
+  }
+}
 async function openForm(type, value = null) {
   error.value = ''; form.value = value ? {...value} : {}; modal.value = type
   try {
-    if (type === 'bookForm') { const [genreData, detail] = await Promise.all([request('/genres'), value ? request(`/books/${value.id}`) : null]); genres.value = items(genreData); if (detail) form.value = {...detail}; form.value.generoIds = detail ? detail.generos.map(g => g.id) : [] }
+    if (type === 'bookForm') {
+      form.value.generoIds = []
+      form.value.exemplaresIniciais = 0
+      const bookForm = form.value
+      const [genreData, detail] = await Promise.all([request('/genres'), value ? request(`/books/${value.id}`) : null])
+      genres.value = items(genreData)
+      if (detail && form.value === bookForm && modal.value === type) {
+        form.value = { ...detail, generoIds: detail.generos.map(genre => genre.id) }
+      }
+    }
     if (type === 'readerForm' && !value) form.value.tipoDocumento = 'CPF'
   } catch(e) { showError(e) }
 }
@@ -108,18 +139,65 @@ async function loanSaved() {
   notify('Empréstimo registrado.')
   await load()
 }
+function closeModal() {
+  if (savingForm.value || addingCopies.value) return
+  loginOpen.value = false
+  modal.value = ''
+  error.value = ''
+}
+function createCopies(bookId, quantidade) {
+  return send(`/books/${bookId}/copies`, 'POST', { quantidade, condicao: 'NOVO' })
+}
+async function saveBook() {
+  const { id, titulo, autor, isbn, editora, anoPublicacao, generoIds, exemplaresIniciais } = form.value
+  const book = await send(id ? `/books/${id}` : '/books', id ? 'PUT' : 'POST', {
+    titulo, autor, generoIds,
+    isbn: isbn || null,
+    editora: editora || null,
+    anoPublicacao: anoPublicacao ? Number(anoPublicacao) : null,
+  })
+  if (!id && can('copy_manage') && exemplaresIniciais > 0) {
+    try {
+      await createCopies(book.id, exemplaresIniciais)
+    } catch (e) {
+      await load()
+      await openBook(book)
+      error.value = `O livro foi cadastrado, mas não foi possível confirmar os exemplares. Confira o cadastro antes de adicioná-los novamente. ${e.message}`
+      return false
+    }
+  }
+  return true
+}
 async function submitForm() {
+  if (savingForm.value) return
+  savingForm.value = true
   error.value = ''
   try {
-    if (modal.value === 'bookForm') { const {id,titulo,autor,isbn,editora,anoPublicacao,generoIds} = form.value; await send(id ? `/books/${id}` : '/books',id ? 'PUT':'POST',{titulo,autor,isbn:isbn || null,editora:editora || null,anoPublicacao:anoPublicacao ? Number(anoPublicacao) : null,generoIds}) }
+    if (modal.value === 'bookForm' && !(await saveBook())) return
     if (modal.value === 'readerForm') { const {id,nome,tipoDocumento,documento,email,telefone,endereco} = form.value; await send(id ? `/readers/${id}` : '/readers',id ? 'PUT':'POST',{nome,tipoDocumento,documento,email:email || null,telefone:telefone || null,endereco:endereco || null}) }
     if (modal.value === 'return') await send(`/loans/${selected.value.loanId}/return`,'POST',{itens:[{itemId:selected.value.id,condicao:form.value.condicao}]})
     if (modal.value === 'userForm') await send('/users','POST',form.value)
     modal.value = ''; notify('Operação realizada com sucesso.'); await load()
-  } catch(e) { showError(e) }
+  } catch(e) { showError(e) } finally { savingForm.value = false }
 }
 async function action(path, method, body, message) { error.value = ''; try { await send(path,method,body); notify(message); await load() } catch(e) { showError(e) } }
-async function addCopies() { try { await send(`/books/${selected.value.id}/copies`,'POST',{quantidade:1,condicao:'NOVO'}); notify('Exemplar adicionado.'); await openBook(selected.value) } catch(e) { showError(e) } }
+async function addCopies() {
+  if (addingCopies.value) return
+  addingCopies.value = true
+  error.value = ''
+  const book = selected.value
+  const quantity = copyQuantity.value
+  try {
+    await createCopies(book.id, quantity)
+    await load(page.value, pagination.value.page)
+    await openBook(book)
+    notify(quantity === 1 ? 'Exemplar adicionado.' : `${quantity} exemplares adicionados.`)
+  } catch (e) {
+    showError(e)
+  } finally {
+    addingCopies.value = false
+  }
+}
 async function downloadReport() { try { const blob = await request('/reports/summary/export',{raw:true}); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'resumo-circulacao.csv'; a.click(); URL.revokeObjectURL(url) } catch(e) { showError(e) } }
 onMounted(async () => { try { genres.value = items(await request('/genres')) } catch {} try { const data = await restoreSession(); user.value = data.usuario } catch { setToken(null) } await load() })
 </script>
@@ -147,7 +225,48 @@ onMounted(async () => { try { genres.value = items(await request('/genres')) } c
           <div v-if="page === 'catalogo' && !user" class="visitor-note">✦ &nbsp; Faça login para acompanhar seus empréstimos e prazos.</div>
         </template>
         <div v-if="page === 'leitores'" class="panel table-wrap"><table><thead><tr><th>Leitor</th><th>Documento</th><th>Contato</th><th>Situação</th><th>Ações</th></tr></thead><tbody><tr v-for="r in readers" :key="r.id"><td><strong>{{ r.nome }}</strong></td><td>{{ r.documento }}</td><td>{{ r.email || '—' }}<br>{{ r.telefone }}</td><td>{{ r.suspenso ? 'Suspenso até ' + date(r.suspensoAte) : 'Ativo' }}</td><td><button v-if="can('reader_update')" class="text-btn" @click="openForm('readerForm',r)">Editar</button> <button v-if="can('loan_read')" class="text-btn" @click="extraData = r; extra = 'history'">Histórico</button> <button v-if="can('reader_update')" class="text-btn" @click="extraData = r; extra = 'access'">Acesso</button> <button v-if="can('reader_delete')" class="text-btn" @click="action(`/readers/${r.id}`,'DELETE',undefined,'Leitor inativado.')">Inativar</button></td></tr></tbody></table><p v-if="!readers.length && !busy" class="empty">Nenhum leitor encontrado.</p></div>
-        <label v-if="page === 'circulacao' || page === 'meus'" class="loan-filter">Situação <select v-model="loanStatus" @change="load()"><option value="">Todas</option><option value="ATIVO">Ativos</option><option value="ATRASADO">Atrasados</option><option value="DEVOLVIDO">Devolvidos</option></select></label><div v-if="page === 'circulacao' || page === 'meus'" class="panel table-wrap"><table><thead><tr><th>Livro / exemplar</th><th v-if="page === 'circulacao'">Leitor</th><th>Devolução prevista</th><th>Situação</th><th>Ações</th></tr></thead><tbody><template v-for="loan in loans" :key="loan.id"><tr v-for="item in loan.itens" :key="item.id"><td><strong>{{ item.tituloLivro }}</strong><br>{{ item.codigoExemplar }}</td><td v-if="page === 'circulacao'">{{ loan.leitor.nome }}</td><td>{{ date(item.dataDevolucaoPrevista) }}</td><td>{{ item.situacao }}</td><td><template v-if="!item.dataDevolucaoReal"><button v-if="can('loan_renew') || can('loan_renew_own')" class="text-btn" @click="action(`/loans/items/${item.id}/renew`,'POST',undefined,'Empréstimo renovado.')">Renovar</button> <button v-if="can('loan_return')" class="text-btn" @click="selected = {...item, loanId: loan.id}; form = {condicao:'CONSERVADO'}; modal = 'return'">Devolver</button></template></td></tr></template></tbody></table><p v-if="!loans.length && !busy" class="empty">Nenhum empréstimo encontrado.</p></div>
+        <template v-if="page === 'circulacao' || page === 'meus'">
+          <label class="loan-filter">Situação
+            <select v-model="loanStatus" @change="load()">
+              <option value="">Todas</option>
+              <option value="ATIVO">Ativos</option>
+              <option value="ATRASADO">Atrasados</option>
+              <option value="DEVOLVIDO">Devolvidos</option>
+            </select>
+          </label>
+          <div class="panel table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Livro / exemplar</th>
+                  <th v-if="page === 'circulacao'">Leitor</th>
+                  <th>Data do empréstimo</th>
+                  <th>Devolução prevista</th>
+                  <th>Situação</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                <template v-for="loan in loans" :key="loan.id">
+                  <tr v-for="item in loan.itens" :key="item.id">
+                    <td><strong>{{ item.tituloLivro }}</strong><br>{{ item.codigoExemplar }}</td>
+                    <td v-if="page === 'circulacao'">{{ loan.leitor.nome }}</td>
+                    <td><time :datetime="loan.dataEmprestimo">{{ date(loan.dataEmprestimo) }}</time></td>
+                    <td>{{ date(item.dataDevolucaoPrevista) }}</td>
+                    <td>{{ item.situacao }}</td>
+                    <td>
+                      <template v-if="!item.dataDevolucaoReal">
+                        <button v-if="can('loan_renew') || can('loan_renew_own')" class="text-btn" @click="action(`/loans/items/${item.id}/renew`, 'POST', undefined, 'Empréstimo renovado.')">Renovar</button>
+                        <button v-if="can('loan_return')" class="text-btn" @click="selected = {...item, loanId: loan.id}; form = {condicao:'CONSERVADO'}; modal = 'return'">Devolver</button>
+                      </template>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+            <p v-if="!loans.length && !busy" class="empty">Nenhum empréstimo encontrado.</p>
+          </div>
+        </template>
         <button v-if="page === 'relatorios'" class="btn btn-outline extra-action" @click="extra = 'reports'">Relatórios detalhados</button><div v-if="page === 'relatorios' && summary" class="kpi-grid"><div v-for="(value,key) in summary" :key="key" class="kpi"><span>{{ key.replace(/([A-Z])/g, ' $1') }}</span><strong>{{ value }}</strong></div></div>
         <button v-if="page === 'equipe' && can('role_manage')" class="btn btn-outline extra-action" @click="extra = 'roles'">Perfis e permissões</button><div v-if="page === 'equipe'" class="panel table-wrap"><table><thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th></tr></thead><tbody><tr v-for="u in users" :key="u.id"><td>{{ u.nome }}</td><td>{{ u.email }}</td><td>{{ u.perfil }}</td><td><button class="text-btn" @click="extraData = u; extra = 'user'">Editar</button> <button v-if="can('session_manage')" class="text-btn" @click="openUserSessions(u)">Sessões</button></td></tr></tbody></table></div>
         <div v-if="page === 'sessoes'" class="panel table-wrap"><table><thead><tr><th>Dispositivo</th><th>IP</th><th>Último acesso</th><th></th></tr></thead><tbody><tr v-for="s in sessions" :key="s.id"><td>{{ s.userAgent }} <strong v-if="s.atual">(atual)</strong></td><td>{{ s.ip }}</td><td>{{ date(s.ultimoAcesso) }}</td><td><button class="text-btn" @click="endSession(s)">Encerrar</button></td></tr></tbody></table></div>
@@ -156,17 +275,66 @@ onMounted(async () => { try { genres.value = items(await request('/genres')) } c
       </div>
     </main>
     <Extras v-if="extra" :kind="extra" :data="extraData" @close="extra = ''; extraData = null" @changed="load(); if (modal === 'book') openBook(selected); request('/genres').then(v => genres = v)" />
-    <div v-if="loginOpen || modal" class="modal-backdrop" @click.self="loginOpen = false; modal = ''; error = ''"><section class="modal" role="dialog" aria-modal="true" :aria-label="loginOpen ? 'Entrar' : 'Detalhes'"><div class="modal-head"><div><span class="eyebrow">BIBLIOTECA COMUNITÁRIA</span><h2>{{ loginOpen ? 'Bem-vindo de volta' : ({book:'Detalhes do livro',bookForm:form.id ? 'Editar livro' : 'Cadastrar livro',readerForm:form.id ? 'Editar leitor' : 'Cadastrar leitor',loanForm:'Novo empréstimo',return:'Registrar devolução',userForm:'Cadastrar usuário'})[modal] }}</h2></div><button class="icon-btn" aria-label="Fechar" @click="loginOpen = false; modal = ''; error = ''">×</button></div>
+    <div v-if="loginOpen || modal" class="modal-backdrop" @click.self="closeModal"><section class="modal" role="dialog" aria-modal="true" :aria-label="loginOpen ? 'Entrar' : 'Detalhes'"><div class="modal-head"><div><span class="eyebrow">BIBLIOTECA COMUNITÁRIA</span><h2>{{ loginOpen ? 'Bem-vindo de volta' : ({book:'Detalhes do livro',bookForm:form.id ? 'Editar livro' : 'Cadastrar livro',readerForm:form.id ? 'Editar leitor' : 'Cadastrar leitor',loanForm:'Novo empréstimo',return:'Registrar devolução',userForm:'Cadastrar usuário'})[modal] }}</h2></div><button class="icon-btn" aria-label="Fechar" :disabled="savingForm || addingCopies" @click="closeModal">×</button></div>
       <div v-if="error" class="alert" role="alert">{{ error }}</div>
       <form v-if="loginOpen" class="form-stack" @submit.prevent="login"><p>Entre para acessar sua conta.</p><label>E-mail<input v-model="credentials.email" type="email" autocomplete="username" required></label><label>Senha<input v-model="credentials.senha" type="password" autocomplete="current-password" required></label><button class="btn btn-primary" :disabled="busy">Entrar</button></form>
-      <div v-else-if="modal === 'book' && selected" class="detail-body"><h2>{{ selected.titulo }}</h2><p>{{ selected.autor }} · {{ selected.editora || 'Editora não informada' }} <span v-if="selected.anoPublicacao">· {{ selected.anoPublicacao }}</span></p><p>{{ genreNames(selected).join(' · ') }}</p><p><strong>{{ selected.exemplaresDisponiveis }}</strong> exemplar(es) disponível(is)</p><div v-if="can('copy_read')"><h3>Exemplares</h3><ul class="copy-list"><li v-for="copy in copies" :key="copy.id">{{ copy.codigo }} <span>{{ copy.condicao }} · {{ copy.status }} <button v-if="can('copy_manage')" class="text-btn" @click="extraData = copy; extra = 'copy'">Editar</button></span></li></ul><button v-if="can('copy_manage')" class="btn btn-outline" @click="addCopies">＋ Adicionar exemplar</button></div><div v-if="can('book_update')" class="modal-actions"><button class="btn btn-primary" @click="openForm('bookForm',selected)">Editar livro</button><button v-if="can('book_delete')" class="btn btn-outline" @click="action(`/books/${selected.id}`,'DELETE',undefined,'Livro inativado.'); modal = ''">Inativar</button></div></div>
+      <div v-else-if="modal === 'book' && selected" class="detail-body">
+        <h2>{{ selected.titulo }}</h2>
+        <p>{{ selected.autor }} · {{ selected.editora || 'Editora não informada' }} <span v-if="selected.anoPublicacao">· {{ selected.anoPublicacao }}</span></p>
+        <p>{{ genreNames(selected).join(' · ') }}</p>
+        <p><strong>{{ selected.exemplaresDisponiveis }}</strong> {{ selected.exemplaresDisponiveis === 1 ? 'exemplar disponível' : 'exemplares disponíveis' }}</p>
+        <div v-if="can('copy_read')">
+          <h3>Exemplares</h3>
+          <ul class="copy-list">
+            <li v-for="copy in copies" :key="copy.id">
+              {{ copy.codigo }}
+              <span>
+                {{ copy.condicao }} · {{ copy.status }}
+                <button v-if="can('copy_manage')" class="text-btn" :disabled="addingCopies" @click="extraData = copy; extra = 'copy'">Editar</button>
+              </span>
+            </li>
+          </ul>
+          <form v-if="can('copy_manage')" class="form-stack" @submit.prevent="addCopies">
+            <label>Quantidade a adicionar
+              <input v-model.number="copyQuantity" type="number" min="1" :max="maxCopiesPerBatch" :disabled="addingCopies" required>
+            </label>
+            <div><button class="btn btn-outline" :disabled="addingCopies">{{ addingCopies ? 'Adicionando...' : 'Adicionar exemplares' }}</button></div>
+          </form>
+        </div>
+        <div v-if="can('book_update')" class="modal-actions">
+          <button class="btn btn-primary" :disabled="addingCopies" @click="openForm('bookForm', selected)">Editar livro</button>
+          <button v-if="can('book_delete')" class="btn btn-outline" :disabled="addingCopies" @click="action(`/books/${selected.id}`,'DELETE',undefined,'Livro inativado.'); modal = ''">Inativar</button>
+        </div>
+      </div>
       <LoanForm v-else-if="modal === 'loanForm'" @saved="loanSaved" @cancel="modal = ''" />
       <form v-else class="form-stack" @submit.prevent="submitForm">
-        <template v-if="modal === 'bookForm'"><label>Título<input v-model="form.titulo" required></label><label>Autor<input v-model="form.autor" required></label><div class="form-grid"><label>Editora<input v-model="form.editora"></label><label>Ano de publicação<input v-model="form.anoPublicacao" type="number" min="1"></label></div><label>ISBN<input v-model="form.isbn"></label><fieldset><legend>Gêneros (selecione ao menos um)</legend><label v-for="g in genres" :key="g.id" class="inline-check"><input v-model="form.generoIds" type="checkbox" :value="g.id"> {{ g.nome }}</label><p v-if="!genres.length">Nenhum gênero cadastrado.</p></fieldset></template>
+        <template v-if="modal === 'bookForm'">
+          <label>Título<input v-model="form.titulo" required></label>
+          <label>Autor<input v-model="form.autor" required></label>
+          <div class="form-grid">
+            <label>Editora<input v-model="form.editora"></label>
+            <label>Ano de publicação<input v-model="form.anoPublicacao" type="number" min="1"></label>
+          </div>
+          <label>ISBN<input v-model="form.isbn"></label>
+          <fieldset>
+            <legend>Gêneros (selecione ao menos um)</legend>
+            <label v-for="g in genres" :key="g.id" class="inline-check">
+              <input v-model="form.generoIds" type="checkbox" :value="g.id"> {{ g.nome }}
+            </label>
+            <p v-if="!genres.length">Nenhum gênero cadastrado.</p>
+          </fieldset>
+          <label v-if="!form.id && can('copy_manage')">
+            Quantidade inicial de exemplares
+            <input v-model.number="form.exemplaresIniciais" type="number" min="0" :max="maxCopiesPerBatch" required>
+          </label>
+        </template>
         <template v-if="modal === 'readerForm'"><label>Nome<input v-model="form.nome" required></label><div class="form-grid"><label>Tipo de documento<select v-model="form.tipoDocumento"><option>CPF</option><option>RG</option></select></label><label>Documento<input v-model="form.documento" required></label></div><label>E-mail<input v-model="form.email" type="email"></label><label>Telefone<input v-model="form.telefone"></label><label>Endereço<input v-model="form.endereco"></label></template>
         <template v-if="modal === 'return'"><p>{{ selected.tituloLivro }} · {{ selected.codigoExemplar }}</p><label>Condição na devolução<select v-model="form.condicao" required><option>NOVO</option><option>EXCELENTE</option><option>CONSERVADO</option><option>ACEITAVEL</option><option>MAL_CONSERVADO</option><option>DANIFICADO</option></select></label></template>
         <template v-if="modal === 'userForm'"><label>Nome<input v-model="form.nome" required></label><label>E-mail<input v-model="form.email" type="email" required></label><label>Senha<input v-model="form.senha" type="password" minlength="8" required></label><label>Telefone<input v-model="form.telefone"></label><label>Perfil<select v-model="form.perfil" required><option value="FUNCIONARIO">Funcionário</option><option value="ADMIN">Administrador</option></select></label></template>
-        <div class="modal-actions"><button type="button" class="btn btn-ghost" @click="modal = ''; error = ''">Cancelar</button><button class="btn btn-primary">Salvar</button></div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" :disabled="savingForm" @click="closeModal">Cancelar</button>
+          <button class="btn btn-primary" :disabled="savingForm">{{ savingForm ? 'Salvando...' : 'Salvar' }}</button>
+        </div>
       </form>
     </section></div>
     <div v-if="notice" class="toast-stack" role="status"><div class="toast">{{ notice }}</div></div>
